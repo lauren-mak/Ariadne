@@ -317,6 +317,13 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
             else:
                 support.error('wrong value for --cov-cutoff option: ' + arg +
                               ' (should be a positive float number, or \'auto\', or \'off\')', log)
+        # UPDATE - New option for Ariadne deconvolution search distance
+        elif opt == "--search-distance":
+            if support.is_int(arg) and int(arg) > 0:
+                options_storage.barcode_distance = int(arg)
+            else:
+                support.error('Incorrect value for search distance: ' + arg +
+                              ' (should be a positive int number', log)
         elif opt == "--hidden-cov-cutoff":
             if support.is_float(arg) and float(arg) > 0.0:
                 options_storage.lcer_cutoff = float(arg)

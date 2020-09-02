@@ -86,6 +86,7 @@ tmp_dir = None
 k_mers = None
 qvoffset = None  # auto-detect by default
 cov_cutoff = 'off'  # default is 'off'
+search_distance = None # UPDATE Default is 25000 bp
 
 # hidden options
 save_gp = False

@@ -843,6 +843,7 @@ void load_cfg(debruijn_config &cfg, boost::property_tree::ptree const &pt,
 
     load(cfg.ss, pt, "strand_specificity", complete);
     load(cfg.calculate_coverage_for_each_lib, pt, "calculate_coverage_for_each_lib", complete);
+    load(cfg.search_distance, pt, "search_distance", complete);
 
 
     if (pt.count("plasmid")) {

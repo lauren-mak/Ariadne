@@ -636,6 +636,8 @@ struct debruijn_config {
 
     bool need_mapping;
 
+    int search_distance;
+
     debruijn_config() :
             use_single_reads(false) {
 
