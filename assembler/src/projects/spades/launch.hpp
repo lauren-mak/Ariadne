@@ -27,6 +27,7 @@
 #include "contig_output_stage.hpp"
 #include "scaffold_graph_construction_stage.hpp"
 #include "scaffolder_analysis_stage.hpp"
+#include "barcode_deconvolution_stage.hpp"
 
 namespace spades {
 
@@ -120,8 +121,13 @@ void assemble_genome() {
 
         //No graph modification allowed after HybridLibrariesAligning stage!
 
+        // If a search distance is set, run the read cloud enhancement module Ariadne.
+        if ( cfg::get().search_distance > 0 ) {
+            SPAdes.add<debruijn_graph::BarcodeDeconvolutionStage>();
+        }
+
         SPAdes.add<debruijn_graph::ContigOutput>(false, "intermediate_contigs")
-            .add<debruijn_graph::BarcodeMapConstructionStage>()
+               .add<debruijn_graph::BarcodeMapConstructionStage>()
                .add<debruijn_graph::PairInfoCount>()
                .add<debruijn_graph::DistanceEstimation>()
                .add<debruijn_graph::ScaffoldGraphConstructionStage>()
