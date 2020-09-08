@@ -320,7 +320,7 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
         # UPDATE - New option for Ariadne deconvolution search distance
         elif opt == "--search-distance":
             if support.is_int(arg) and int(arg) > 0:
-                options_storage.barcode_distance = int(arg)
+                options_storage.search_distance = int(arg)
             else:
                 support.error('Incorrect value for search distance: ' + arg +
                               ' (should be a positive int number', log)

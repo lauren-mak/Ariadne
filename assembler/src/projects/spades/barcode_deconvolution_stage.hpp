@@ -13,6 +13,8 @@
 #include <omp.h>
 #include <string>
 #include <sstream>
+#include <stdio.h>
+#include <string.h>
 #include <unordered_map>
 #include <vector>
 
@@ -48,6 +50,16 @@ namespace debruijn_graph {
 
     inline bool check_forward(int i) {
         return i == 0 || i % 2 == 0;
+    }
+
+    std::ofstream MakeOutputStream(std::string suffix) {
+        std::ofstream stream;
+        const size_t bufsize = 1024*1024;
+        char buf[bufsize];
+        stream.rdbuf()->pubsetbuf(buf, bufsize);
+        std::string prefix = cfg::get().output_dir + std::to_string(cfg::get().search_distance);
+        stream.open(prefix + suffix, std::ofstream::out);
+        return stream;
     }
 
     inline std::string GetTenXBarcodeFromRead(const io::PairedRead &read) {
@@ -142,6 +154,27 @@ namespace debruijn_graph {
     {
         std::string read_string = "@" + name + '\n' + seq + "\n+\n" + qual;
         return read_string;
+    }
+
+    void ReformatYAMLs()
+    // Move old input_dataset.yaml to a different name, and write a new version of it so that
+    // barcode_index_construction.cpp will pick up on the enhanced FastQs instead of the original FastQs.
+    {
+        std::string out_dir = cfg::get().output_base;
+        std::string old_name_str = out_dir + "input_dataset.yaml";
+        char old_name[old_name_str.length() + 1];
+        strcpy(old_name, old_name_str.c_str());
+        std::string new_name_str = out_dir + "input_dataset_original.yaml";
+        char new_name[new_name_str.length() + 1];
+        strcpy(new_name, new_name_str.c_str());
+        std::rename(old_name, new_name);
+
+        std::ofstream stream;
+        stream.open(old_name_str, std::ofstream::out);
+        std::string prefix = cfg::get().output_dir + std::to_string(cfg::get().search_distance);
+        stream << "- \"left reads\":\n" << "  - \"" << prefix << ".R1.fastq\"\n  \"orientation\": \"fr\"\n"
+               << "  \"right reads\":\n" << "  - \"" << prefix << ".R2.fastq\"\n  \"type\": \"clouds10x\"";
+        stream.close();
     }
 
     /*
@@ -241,6 +274,7 @@ namespace debruijn_graph {
     // Generates all connections between reads in the same read cloud by constructing a Djikstra graph from accessible vertices and traversing it
     // to find other reads with mapping paths containing those vertices.
     {
+        int search_dist = cfg::get().search_distance;
         for (size_t i = 0; i < tmp_mapping.size(); ++i) { // For each read i...
             auto read_1 = tmp_mapping[i].second;
             if (read_1.size()){  // Check to see if the first read has a mapping path.
@@ -266,7 +300,7 @@ namespace debruijn_graph {
                             VertexId startVertex = gp.g.EdgeEnd(read_1.back().first); // 3'-most vertex of the read's mapping path.
                             std::vector<VertexId> reached_vertices;
                             int endDist = gp.g.length(read_1_edge_end) - read_1.end_pos(); // Distance between end of read and 3'-most vertex.
-                            int reducedEndDist = cfg::get().barcode_distance - endDist; // The amount of distance to search starting from the 3'-most vertex.
+                            int reducedEndDist = search_dist - endDist; // The amount of distance to search starting from the 3'-most vertex.
                             if (reducedEndDist > 0){
                                 reached_vertices = VerticesReachedFrom(startVertex, gp, reducedEndDist); // Find the list of vertices that can be reached with a read of MappingPath<EdgeId>*.;
                             }
@@ -276,7 +310,7 @@ namespace debruijn_graph {
                             VertexId conjStartVertex = gp.g.EdgeStart(read_1.front().first); // 5'-most vertex of the read's mapping path.
                             std::vector<VertexId> conjugate_reached_vertices;
                             int startDist = read_1.mapping_at(0).mapped_range.start_pos;
-                            int reducedStartDist = cfg::get().barcode_distance - startDist;
+                            int reducedStartDist = search_dist - startDist;
                             if (reducedStartDist > 0){
                                 conjugate_reached_vertices = ConjugateVerticesReachedFrom(conjStartVertex, gp, reducedStartDist);
                             }
@@ -394,7 +428,6 @@ namespace debruijn_graph {
             }
             enh_cloud_stats << barcode << "," << 0 << "," << master_record.size() << std::endl; // Reporting un-enhanced read cloud information.
         }
-//        enh_cloud_stats.flush();
         return master_record;
     }
 
@@ -414,8 +447,6 @@ namespace debruijn_graph {
             ++direction;
             master_record.erase(master_record.begin());
         }
-//        fastq_stream_forward.flush();
-//        fastq_stream_reverse.flush();
     }
 
     /*
@@ -427,30 +458,22 @@ namespace debruijn_graph {
     {
         gp.EnsureIndex();
         if (!gp.kmer_mapper.IsAttached()) gp.kmer_mapper.Attach();
-        INFO("There are " << gp.g.size() << " vertices in the assembly graph");
         INFO("Read cloud deconvolution starting");
+//        INFO("There are " << gp.g.size() << " vertices in the assembly graph");
         config::dataset& dataset_info = cfg::get_writable().ds;
         lib_t& lib_10x = dataset_info.reads[0];
 
         // Output stream objects.
         std::ios::sync_with_stdio(false);
         std::cin.tie(nullptr);
-        std::ofstream fastq_stream_forward, fastq_stream_reverse, stat_stream;
-        const size_t bufsize = 1024*1024;
-        char buf[bufsize];
-        fastq_stream_forward.rdbuf()->pubsetbuf(buf, bufsize);
-        fastq_stream_reverse.rdbuf()->pubsetbuf(buf, bufsize);
-        stat_stream.rdbuf()->pubsetbuf(buf, bufsize);
-        std::string file_name = cfg::get().output_dir + std::to_string(cfg::get().barcode_distance);
-        fastq_stream_forward.open (file_name + ".R1.fastq", std::ofstream::out);
-        fastq_stream_reverse.open (file_name + ".R2.fastq", std::ofstream::out);
-        stat_stream.open (file_name + ".summary.csv", std::ofstream::out);
+        std::ofstream fastq_stream_forward = MakeOutputStream(".R1.fastq");
+        std::ofstream fastq_stream_reverse = MakeOutputStream(".R2.fastq");
+        std::ofstream stat_stream = MakeOutputStream(".summary.csv");
 
         // Collection of read information from the original read clouds
         std::vector<std::vector<std::vector<int>>> connected_reads;
         std::vector<std::vector<std::pair<int, MappingPath<EdgeId>>>> mapping_record;
         std::vector<std::vector<std::tuple<std::string, std::string, std::string>>> read_record;
-        std::vector<std::tuple<std::string, std::string, std::string>> unbarcoded_record;
 
         // Setting memory-based limits on read-chunks loaded at once.
         int num_loadable_reads = (int)((utils::get_free_memory() * 1.0) / 1300 ); // Available memory / estimated memory per read in bytes
@@ -461,10 +484,13 @@ namespace debruijn_graph {
         int num_reads_total;
         int cloud_size_filter = SetCloudFilter(gp, lib_10x, num_reads_total);
         INFO("Mean original cloud size is " << cloud_size_filter << " reads");
+        int num_unbarcoded_reads = 0;
 
         while (num_reads_section_end < num_reads_total ) {
             INFO("Loading original read clouds from library");
+            std::vector<std::tuple<std::string, std::string, std::string>> unbarcoded_record;
             num_reads_section_end = LoadReads(connected_reads, mapping_record, read_record, unbarcoded_record, gp, lib_10x, num_reads_section_end, num_reads_section_goal);
+            num_unbarcoded_reads += unbarcoded_record.size();
             size_t num_original_clouds = mapping_record.size();
             INFO(num_original_clouds << " original read clouds loaded");
 #pragma omp parallel for shared(connected_reads, mapping_record, read_record) schedule(dynamic, 1) num_threads(cfg::get().max_threads)
@@ -484,14 +510,15 @@ namespace debruijn_graph {
             connected_reads.clear();
             mapping_record.clear();
             read_record.clear();
+            OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
             num_reads_section_goal = num_reads_section_end + num_loadable_reads;
         }
 
-        OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
-        stat_stream << "NA," << 0 << "," << unbarcoded_record.size() << std::endl; // Reporting un-enhanced read cloud information.
+        stat_stream << "NA," << 0 << "," << num_unbarcoded_reads << std::endl; // Reporting un-enhanced read cloud information.
         fastq_stream_forward.close();
         fastq_stream_reverse.close();
         stat_stream.close();
+        ReformatYAMLs();
         INFO("Read cloud deconvolution finished");
     }
 
