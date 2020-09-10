@@ -521,6 +521,7 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
         if options_storage.read_buffer_size:
             cfg["assembly"].__dict__["read_buffer_size"] = options_storage.read_buffer_size
         cfg["assembly"].__dict__["correct_scaffolds"] = options_storage.correct_scaffolds
+        cfg["assembly"].__dict__["search_distance"] = options_storage.search_distance
 
     #corrector can work only if contigs exist (not only error correction)
     if (not options_storage.only_error_correction) and options_storage.mismatch_corrector:

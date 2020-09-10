@@ -120,6 +120,7 @@ restart_reference = None
 restart_configs_dir = None
 restart_read_buffer_size = None
 restart_fast = None
+restart_search_dist = None
 
 # for running to specific check-point
 stop_after = None
@@ -141,7 +142,7 @@ dict_of_rel2abs = dict()
 long_options = "12= merged= threads= memory= tmp-dir= iterations= phred-offset= sc iontorrent meta large-genome rna plasmid "\
                "ss-fr ss-rf fast fast:false "\
                "only-error-correction only-assembler "\
-               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false " \
+               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false search-distance= " \
                "help version test debug debug:false reference= series-analysis= config-file= dataset= "\
                "bh-heap-check= spades-heap-check= read-buffer-size= help-hidden "\
                "mismatch-correction mismatch-correction:false careful careful:false save-gp save-gp:false "\
@@ -396,6 +397,7 @@ def set_default_values():
     global cov_cutoff
     global tmp_dir
     global fast
+    global search_distance
 
     if threads is None:
         threads = THREADS
@@ -424,6 +426,8 @@ def set_default_values():
         tmp_dir = os.path.join(output_dir, TMP_DIR)
     if fast is None:
         fast = False
+    if search_distance is None:
+        search_distance = 0
 
 
 def set_test_options():
@@ -469,6 +473,7 @@ def save_restart_options(log):
     global restart_configs_dir
     global restart_read_buffer_size
     global restart_fast
+    global restart_search_dist
 
     restart_k_mers = k_mers
     restart_careful = careful
@@ -485,7 +490,7 @@ def save_restart_options(log):
     restart_configs_dir = configs_dir
     restart_read_buffer_size = read_buffer_size
     restart_fast = fast
-
+    restart_search_dist = search_distance
 
 def load_restart_options():
     global k_mers
@@ -504,6 +509,7 @@ def load_restart_options():
     global read_buffer_size
     global original_k_mers
     global fast
+    global search_distance
 
     if restart_k_mers:
         original_k_mers = k_mers
@@ -539,6 +545,8 @@ def load_restart_options():
         read_buffer_size = restart_read_buffer_size
     if restart_fast is not None:
         fast = restart_fast
+    if restart_search_dist is not None:
+        search_distance = restart_search_dist
 
 
 def enable_truseq_mode():

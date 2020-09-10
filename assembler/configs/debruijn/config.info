@@ -178,3 +178,4 @@ bwa_aligner
 flanking_range 55
 series_analysis ""
 save_gp false
+search_distance = 0
