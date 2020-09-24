@@ -319,7 +319,7 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
                               ' (should be a positive float number, or \'auto\', or \'off\')', log)
         # UPDATE - New option for Ariadne deconvolution search distance
         elif opt == "--search-distance":
-            if support.is_int(arg) and int(arg) > 0:
+            if support.is_int(arg) and int(arg) >= 0:
                 options_storage.search_distance = int(arg)
             else:
                 support.error('Incorrect value for search distance: ' + arg +
