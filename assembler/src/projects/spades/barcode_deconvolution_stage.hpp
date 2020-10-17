@@ -36,6 +36,22 @@ namespace debruijn_graph {
      Tools to process barcode strings and single reads.
     */
 
+    inline double CalcMedian(vector<int> cloud_sizes)
+    {
+        size_t size = cloud_sizes.size();
+        if (size == 0){
+            return 0;  // Undefined, really.
+        }
+        else{
+            sort(cloud_sizes.begin(), cloud_sizes.end());
+            if (size % 2 == 0) {
+                return (cloud_sizes[size / 2 - 1] + cloud_sizes[size / 2]) / 2;
+            } else {
+                return cloud_sizes[size / 2];
+            }
+        }
+    }
+
     inline int SmallestVectorIndex(std::vector<std::vector<std::tuple<std::string, std::string, std::string>>>& v) {
         int smallest = INT_MAX;
         int index = -1;
@@ -185,7 +201,7 @@ namespace debruijn_graph {
 
     int SetCloudFilter(debruijn_graph::conj_graph_pack& graph_pack,
                         const lib_t& lib_10x, int& num_reads_total)
-    // Calculate the mean size of the original read clouds to serve as a filter for processing read clouds later.
+    // Calculate the median (new, originally mean) size of the original read clouds to serve as a filter for processing read clouds later.
     {
         auto stream = io::paired_easy_reader(lib_10x, false, false);
         io::PairedRead read;
@@ -210,9 +226,10 @@ namespace debruijn_graph {
         }
         cloud_sizes.push_back(num_cloud_reads);
         stream->close();
-        double cloud_mean_size = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
+        // double cloud_size_filter = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
+        double cloud_size_filter = CalcMedian(cloud_sizes);
         INFO(num_reads_total << " reads to process");
-        return (int)cloud_mean_size;
+        return (int)cloud_size_filter;
     }
 
     int LoadReads(std::vector<std::vector<std::vector<int>>>& connected_reads,
@@ -453,7 +470,6 @@ namespace debruijn_graph {
         gp.EnsureIndex();
         if (!gp.kmer_mapper.IsAttached()) gp.kmer_mapper.Attach();
         INFO("Read cloud deconvolution starting");
-        INFO("This is the most updated version");
 //        INFO("There are " << gp.g.size() << " vertices in the assembly graph");
         config::dataset& dataset_info = cfg::get_writable().ds;
         lib_t& lib_10x = dataset_info.reads[0];
@@ -471,14 +487,12 @@ namespace debruijn_graph {
         std::vector<std::vector<std::tuple<std::string, std::string, std::string>>> read_record;
 
         // Setting memory-based limits on read-chunks loaded at once.
-        int num_loadable_reads = (int)((utils::get_free_memory() * 1.0) / 900 ); // Available memory / estimated memory per read in bytes
-        int free_mem = utils::get_free_memory() / ( 1024*1024*1024 );
-        INFO( free_mem << "GB available, chunks of approximately " << num_loadable_reads << " reads processed at once");
+        int num_loadable_reads = (int)((utils::get_free_memory() * 1.0) / 850 ); // Available memory / estimated memory per read in bytes
         int num_reads_section_end = 0;
         int num_reads_section_goal = num_loadable_reads;
         int num_reads_total = 0;
         int cloud_size_filter = SetCloudFilter(gp, lib_10x, num_reads_total);
-        INFO("Mean original cloud size is " << cloud_size_filter << " reads");
+        INFO("Median original cloud size is " << cloud_size_filter << " reads");
 
         while (num_reads_section_end < num_reads_total ) {
             INFO("Loading original read clouds from library");
