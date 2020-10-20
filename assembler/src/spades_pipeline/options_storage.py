@@ -87,6 +87,7 @@ k_mers = None
 qvoffset = None  # auto-detect by default
 cov_cutoff = 'off'  # default is 'off'
 search_distance = None # UPDATE Default is 25000 bp
+size_cutoff = None # UPDATE Default is 25000 bp
 
 # hidden options
 save_gp = False
@@ -121,6 +122,7 @@ restart_configs_dir = None
 restart_read_buffer_size = None
 restart_fast = None
 restart_search_dist = None
+restart_size_cutoff = None
 
 # for running to specific check-point
 stop_after = None
@@ -142,7 +144,7 @@ dict_of_rel2abs = dict()
 long_options = "12= merged= threads= memory= tmp-dir= iterations= phred-offset= sc iontorrent meta large-genome rna plasmid "\
                "ss-fr ss-rf fast fast:false "\
                "only-error-correction only-assembler "\
-               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false search-distance= " \
+               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false search-distance= size-cutoff= " \
                "help version test debug debug:false reference= series-analysis= config-file= dataset= "\
                "bh-heap-check= spades-heap-check= read-buffer-size= help-hidden "\
                "mismatch-correction mismatch-correction:false careful careful:false save-gp save-gp:false "\

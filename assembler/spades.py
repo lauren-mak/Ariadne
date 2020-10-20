@@ -324,6 +324,12 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
             else:
                 support.error('Incorrect value for search distance: ' + arg +
                               ' (should be a positive int number', log)
+        elif opt == "--size-cutoff":
+            if support.is_float(arg) and float(arg) >= 0:
+                options_storage.size_cutoff = float(arg)
+            else:
+                support.error('Incorrect value for read cloud proportion cutoff: ' + arg +
+                              ' (should be a positive float number', log)
         elif opt == "--hidden-cov-cutoff":
             if support.is_float(arg) and float(arg) > 0.0:
                 options_storage.lcer_cutoff = float(arg)
@@ -522,6 +528,7 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
             cfg["assembly"].__dict__["read_buffer_size"] = options_storage.read_buffer_size
         cfg["assembly"].__dict__["correct_scaffolds"] = options_storage.correct_scaffolds
         cfg["assembly"].__dict__["search_distance"] = options_storage.search_distance
+        cfg["assembly"].__dict__["size_cutoff"] = options_storage.size_cutoff
 
     #corrector can work only if contigs exist (not only error correction)
     if (not options_storage.only_error_correction) and options_storage.mismatch_corrector:

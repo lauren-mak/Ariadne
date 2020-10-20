@@ -36,7 +36,7 @@ namespace debruijn_graph {
      Tools to process barcode strings and single reads.
     */
 
-    inline double CalcMedian(vector<int> cloud_sizes)
+    inline double CalcCutoff(vector<int> cloud_sizes, double size_cutoff)
     {
         size_t size = cloud_sizes.size();
         if (size == 0){
@@ -44,10 +44,11 @@ namespace debruijn_graph {
         }
         else{
             sort(cloud_sizes.begin(), cloud_sizes.end());
-            if (size % 2 == 0) {
-                return (cloud_sizes[size / 2 - 1] + cloud_sizes[size / 2]) / 2;
+            int divisor = size * size_cutoff;
+            if (size % size_cutoff == 0) {
+                return (cloud_sizes[divisor - 1] + cloud_sizes[divisor]) / 2;
             } else {
-                return cloud_sizes[size / 2];
+                return cloud_sizes[divisor];
             }
         }
     }
@@ -199,9 +200,9 @@ namespace debruijn_graph {
      Workhorse read information processing functions.
     */
 
-    int SetCloudFilter(debruijn_graph::conj_graph_pack& graph_pack,
+    int SetCloudFilter(debruijn_graph::conj_graph_pack& graph_pack, const int& size_cutoff,
                         const lib_t& lib_10x, int& num_reads_total)
-    // Calculate the median (new, originally mean) size of the original read clouds to serve as a filter for processing read clouds later.
+    // Calculate the first quartile (new, mean ->  median) size of the original read clouds to serve as a filter for processing read clouds later.
     {
         auto stream = io::paired_easy_reader(lib_10x, false, false);
         io::PairedRead read;
@@ -227,7 +228,7 @@ namespace debruijn_graph {
         cloud_sizes.push_back(num_cloud_reads);
         stream->close();
         // double cloud_size_filter = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
-        double cloud_size_filter = CalcMedian(cloud_sizes);
+        double cloud_size_filter = CalcCutoff(cloud_sizes, size_cutoff);
         INFO(num_reads_total << " reads to process");
         return (int)cloud_size_filter;
     }
@@ -491,8 +492,8 @@ namespace debruijn_graph {
         int num_reads_section_end = 0;
         int num_reads_section_goal = num_loadable_reads;
         int num_reads_total = 0;
-        int cloud_size_filter = SetCloudFilter(gp, lib_10x, num_reads_total);
-        INFO("Median original cloud size is " << cloud_size_filter << " reads");
+        int cloud_size_filter = SetCloudFilter(gp, cfg::get().size_cutoff, lib_10x, num_reads_total);
+        INFO("Cutoff for original cloud size is " << cloud_size_filter << " reads");
 
         while (num_reads_section_end < num_reads_total ) {
             INFO("Loading original read clouds from library");
