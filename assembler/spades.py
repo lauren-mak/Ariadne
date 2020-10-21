@@ -325,10 +325,10 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
                 support.error('Incorrect value for search distance: ' + arg +
                               ' (should be a positive int number', log)
         elif opt == "--size-cutoff":
-            if support.is_float(arg) and float(arg) >= 0:
+            if support.is_float(arg) and float(arg) >= 0.0:
                 options_storage.size_cutoff = float(arg)
             else:
-                support.error('Incorrect value for read cloud proportion cutoff: ' + arg +
+                support.error('Incorrect value for --size-cutoff: ' + arg +
                               ' (should be a positive float number', log)
         elif opt == "--hidden-cov-cutoff":
             if support.is_float(arg) and float(arg) > 0.0:

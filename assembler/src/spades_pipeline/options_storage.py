@@ -87,7 +87,7 @@ k_mers = None
 qvoffset = None  # auto-detect by default
 cov_cutoff = 'off'  # default is 'off'
 search_distance = None # UPDATE Default is 25000 bp
-size_cutoff = None # UPDATE Default is 25000 bp
+size_cutoff = None # UPDATE Default is 0 i.e.: deconvolve all reads
 
 # hidden options
 save_gp = False
