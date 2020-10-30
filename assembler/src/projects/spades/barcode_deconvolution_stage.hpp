@@ -196,37 +196,38 @@ namespace debruijn_graph {
      Workhorse read information processing functions.
     */
 
-    int SetCloudFilter(debruijn_graph::conj_graph_pack& graph_pack, const float& size_cutoff,
-                        const lib_t& lib_10x, int& num_reads_total)
-    // Calculate the first quartile (new, mean ->  median) size of the original read clouds to serve as a filter for processing read clouds later.
+    int CountReads(const lib_t& lib_10x)
+    // ~Calculate the first quartile (new, mean ->  median) size of the original read clouds to serve as a filter for processing read clouds later.~
+    // Count number of reads in the dataset.
     {
         auto stream = io::paired_easy_reader(lib_10x, false, false);
         io::PairedRead read;
+        int num_reads_total = 0;
 
         // Initialize barcode string and loop-tracker values.
-        std::string current_barcode;
-        int num_cloud_reads = 0;
-        std::vector<int> cloud_sizes;
+//        std::string current_barcode;
+//        int num_cloud_reads = 0;
+//        std::vector<int> cloud_sizes;
 
         while ( !stream->eof() ) {
             *stream >> read;
             num_reads_total += 2;
-            std::string barcode_string = GetTenXBarcodeFromRead(read);
-            if ( !barcode_string.empty() ){
-                if ( barcode_string != current_barcode && !current_barcode.empty() ){
-                    cloud_sizes.push_back(num_cloud_reads);
-                    num_cloud_reads = 0;
-                }
-                num_cloud_reads += 2;
-                current_barcode = barcode_string;
-            }
+//            std::string barcode_string = GetTenXBarcodeFromRead(read);
+//            if ( !barcode_string.empty() ){
+//                if ( barcode_string != current_barcode && !current_barcode.empty() ){
+//                    cloud_sizes.push_back(num_cloud_reads);
+//                    num_cloud_reads = 0;
+//                }
+//                num_cloud_reads += 2;
+//                current_barcode = barcode_string;
+//            }
         }
-        cloud_sizes.push_back(num_cloud_reads);
+//        cloud_sizes.push_back(num_cloud_reads);
         stream->close();
-        // float cloud_size_filter = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
-        float cloud_size_filter = CalcCutoff(cloud_sizes, size_cutoff);
+//        float cloud_size_filter = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
+//        float cloud_size_filter = CalcCutoff(cloud_sizes, size_cutoff);
         INFO(num_reads_total << " reads to process");
-        return (int)cloud_size_filter;
+        return num_reads_total;
     }
 
     int LoadReads(std::vector<std::vector<std::vector<int>>>& connected_reads,
@@ -487,8 +488,8 @@ namespace debruijn_graph {
         int num_loadable_reads = (int)((utils::get_free_memory() * 1.0) / 850 ); // Available memory / estimated memory per read in bytes
         int num_reads_section_end = 0;
         int num_reads_section_goal = num_loadable_reads;
-        int num_reads_total = 0;
-        int cloud_size_filter = SetCloudFilter(gp, cfg::get().size_cutoff, lib_10x, num_reads_total);
+        int num_reads_total = CountReads(lib_10x);
+        int cloud_size_filter = cfg::get().size_cutoff;
         INFO("Cutoff for original cloud size is " << cloud_size_filter << " reads");
 
         while (num_reads_section_end < num_reads_total ) {

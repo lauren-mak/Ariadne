@@ -325,8 +325,8 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
                 support.error('Incorrect value for search distance: ' + arg +
                               ' (should be a positive int number', log)
         elif opt == "--size-cutoff":
-            if support.is_float(arg) and float(arg) >= 0.0:
-                options_storage.size_cutoff = float(arg)
+            if support.is_int(arg) and int(arg) >= 0:
+                options_storage.size_cutoff = int(arg)
             else:
                 support.error('Incorrect value for --size-cutoff: ' + arg +
                               ' (should be a positive float number', log)
