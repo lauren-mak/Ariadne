@@ -197,35 +197,17 @@ namespace debruijn_graph {
     */
 
     int CountReads(const lib_t& lib_10x)
-    // ~Calculate the first quartile (new, mean ->  median) size of the original read clouds to serve as a filter for processing read clouds later.~
     // Count number of reads in the dataset.
     {
         auto stream = io::paired_easy_reader(lib_10x, false, false);
         io::PairedRead read;
         int num_reads_total = 0;
 
-        // Initialize barcode string and loop-tracker values.
-//        std::string current_barcode;
-//        int num_cloud_reads = 0;
-//        std::vector<int> cloud_sizes;
-
         while ( !stream->eof() ) {
             *stream >> read;
             num_reads_total += 2;
-//            std::string barcode_string = GetTenXBarcodeFromRead(read);
-//            if ( !barcode_string.empty() ){
-//                if ( barcode_string != current_barcode && !current_barcode.empty() ){
-//                    cloud_sizes.push_back(num_cloud_reads);
-//                    num_cloud_reads = 0;
-//                }
-//                num_cloud_reads += 2;
-//                current_barcode = barcode_string;
-//            }
         }
-//        cloud_sizes.push_back(num_cloud_reads);
         stream->close();
-//        float cloud_size_filter = std::accumulate(cloud_sizes.begin(), cloud_sizes.end(), 0) / cloud_sizes.size();
-//        float cloud_size_filter = CalcCutoff(cloud_sizes, size_cutoff);
         INFO(num_reads_total << " reads to process");
         return num_reads_total;
     }
@@ -287,7 +269,6 @@ namespace debruijn_graph {
             if (read_1.size()){  // Check to see if the first read has a mapping path.
                 EdgeId read_1_edge_end = read_1.edge_at(read_1.size() - 1);
                 EdgeId read_1_edge_start = read_1.edge_at(0);
-
                 for(size_t j = i + 1; j < tmp_mapping.size(); ++j) { // ...check to see if all other reads j can be connected to it.
                     auto read_2 = tmp_mapping[j].second;
                     if ( read_2.size() && !(check_forward(i) && j == i + 1) ){  // Check to see if read j has a mapping path and isn't the paired read.
@@ -295,13 +276,25 @@ namespace debruijn_graph {
                         EdgeId read_2_edge_start = read_2.edge_at(0);
 
                         if (read_1_edge_end == read_2_edge_start ||
-                            read_1_edge_end == gp.g.conjugate(read_2_edge_end) || // Does read j start on the same edge that read i ends?
-                            read_1_edge_start == read_2_edge_end ||
-                            read_1_edge_start == gp.g.conjugate(read_2_edge_start) // Does read j end on the same edge that read i starts?
-                                ) { // During previous tests, too few reads are being connected. Test to see if this fixes it.
-                            tmp_connected[ tmp_mapping[i].first ].push_back( tmp_mapping[j].first );
-                            tmp_connected[ tmp_mapping[j].first ].push_back( tmp_mapping[i].first );
-                        } else { // Otherwise, is the read between read j traversable within the Djikstra graph?
+                            read_1_edge_end == gp.g.conjugate(read_2_edge_end)) { // Does read j start on the same edge that read i ends?
+                            long int read_distance = read_2.start_pos() - read_1.end_pos();
+                            if (std::abs(read_distance) < search_dist && read_distance >= 0){
+                                tmp_connected[ tmp_mapping[i].first ].push_back( tmp_mapping[j].first );
+                                tmp_connected[ tmp_mapping[j].first ].push_back( tmp_mapping[i].first );
+                            }
+                        }
+
+                        else if (read_1_edge_start == read_2_edge_end ||
+                                 read_1_edge_start == gp.g.conjugate(read_2_edge_start)) { // Does read j end on the same edge that read i starts?
+                            int path2_conj_end = gp.g.length(read_2_edge_end) - read_2.end_pos();
+                            long int read_distance = path2_conj_end - read_1.end_pos();
+                            if (std::abs(read_distance) < search_dist && read_distance >= 0) {
+                                tmp_connected[ tmp_mapping[i].first ].push_back( tmp_mapping[j].first );
+                                tmp_connected[ tmp_mapping[j].first ].push_back( tmp_mapping[i].first );
+                            }
+                        }
+
+                        else { // Otherwise, is the read between read j traversable within the Djikstra graph?
 
                             // Look for the set of all vertices reachable from read 1's 3'-most vertex.
                             VertexId startVertex = gp.g.EdgeEnd(read_1.back().first); // 3'-most vertex of the read's mapping path.
@@ -323,24 +316,27 @@ namespace debruijn_graph {
                             }
                             std::sort(conjugate_reached_vertices.begin(), conjugate_reached_vertices.end());
 
-                            // Evaluate the 5' and 3'-most vertices of read 2.
-                            VertexId forward_end_three = gp.g.EdgeEnd(read_2_edge_end);
-                            // Assuming read is same-strand. The 3'-most vertex of the last edge that read 2 sits on.
-                            VertexId reverse_end_three = gp.g.conjugate(gp.g.EdgeStart(read_2_edge_start));
-                            // Assuming read is opposite-strand. The 5'-most vertex of the first edge that read 2 sits on.
-                            VertexId forward_end_five = gp.g.EdgeStart(read_2_edge_start);
-                            // Assuming read is same-strand. The 5'-most vertex of the last edge that read 2 sits on.
-                            VertexId reverse_end_five = gp.g.conjugate(gp.g.EdgeEnd(read_2_edge_end));
-                            // Assuming read is opposite-strand. The 3'-most vertex of the last edge that read 2 sits on.
-
-                            if (std::binary_search(reached_vertices.begin(), reached_vertices.end(), forward_end_five) ||
-                                std::binary_search(reached_vertices.begin(), reached_vertices.end(), reverse_end_five) ||
-                                // If the 5'-most vertex can be found in the Djikstra graph, then add an edge between the two reads.
-                                std::binary_search(conjugate_reached_vertices.begin(), conjugate_reached_vertices.end(), forward_end_three) ||
-                                std::binary_search(conjugate_reached_vertices.begin(), conjugate_reached_vertices.end(), forward_end_three)) {
-                                // If the 3'-most vertex can be found in the conjugate Djikstra graph, then add an edge between the two reads.
-                                tmp_connected[ tmp_mapping[i].first ].push_back( tmp_mapping[j].first );
-                                tmp_connected[ tmp_mapping[j].first ].push_back( tmp_mapping[i].first );
+                            // Check each end-vertex of read 2 and its reverse complement to see if it connects to read 1.
+                            for (size_t k = 0; k < read_2.size(); ++k) {
+                                auto read_2_vertex = gp.g.EdgeEnd(read_2[k].first);
+                                // This is the end vertex of an edge that the second read sits on. Assuming the read is going in the 'forward' direction.
+                                if (std::binary_search(reached_vertices.begin(), reached_vertices.end(), read_2_vertex) ||
+                                    std::binary_search(conjugate_reached_vertices.begin(),
+                                                       conjugate_reached_vertices.end(), read_2_vertex)) {
+                                    tmp_connected[tmp_mapping[i].first].push_back(tmp_mapping[j].first);
+                                    tmp_connected[tmp_mapping[j].first].push_back(tmp_mapping[i].first);
+                                    break;
+                                } else {
+                                    read_2_vertex = gp.g.conjugate(gp.g.EdgeEnd(read_2[k].first));
+                                    // This is the end vertex of an edge that the reverse conjugate of the second read sits on.
+                                    if (std::binary_search(reached_vertices.begin(), reached_vertices.end(), read_2_vertex) ||
+                                        std::binary_search(conjugate_reached_vertices.begin(),
+                                                           conjugate_reached_vertices.end(), read_2_vertex)) {
+                                        tmp_connected[tmp_mapping[i].first].push_back(tmp_mapping[j].first);
+                                        tmp_connected[tmp_mapping[j].first].push_back(tmp_mapping[i].first);
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -365,9 +361,7 @@ namespace debruijn_graph {
 
             for (size_t i = 0; i < tmp_connected.size(); ++i) {
                 auto read_find = std::find(visited_reads.begin(), visited_reads.end(), i);
-                if (read_find != visited_reads.end()) { // If this read has already been grouped, skip.
-                    continue;
-                } else {
+                if (read_find == visited_reads.end()) { // If this read hasn't already been grouped, process it.
                     size_t num_reads = 0; // The number of reads in the enhanced cloud.
                     visited_reads.push_back(i); // Add read index to vector of already-grouped reads.
                     cloud_queue.push_back(i);
@@ -468,7 +462,6 @@ namespace debruijn_graph {
         gp.EnsureIndex();
         if (!gp.kmer_mapper.IsAttached()) gp.kmer_mapper.Attach();
         INFO("Read cloud deconvolution starting");
-//        INFO("There are " << gp.g.size() << " vertices in the assembly graph");
         config::dataset& dataset_info = cfg::get_writable().ds;
         lib_t& lib_10x = dataset_info.reads[0];
 
@@ -519,7 +512,7 @@ namespace debruijn_graph {
         fastq_stream_forward.close();
         fastq_stream_reverse.close();
         stat_stream.close();
-        ReformatYAMLs();
+        // ReformatYAMLs();
         INFO("Read cloud deconvolution finished");
     }
 
