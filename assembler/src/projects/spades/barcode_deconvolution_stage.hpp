@@ -49,7 +49,7 @@ namespace debruijn_graph {
         }
     }
 
-    inline int SmallestVectorIndex(std::vector<std::vector<std::tuple<std::string, std::string, std::string>>>& v) {
+    inline int SmallestVectorIndex(std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>>& v) {
         int smallest = INT_MAX;
         int index = -1;
         for ( size_t i = 0; i < v.size(); ++i ) {
@@ -111,7 +111,7 @@ namespace debruijn_graph {
                   debruijn_graph::conj_graph_pack& gp,
                   std::vector<std::vector<std::vector<int>>>& connected_reads,
                   std::vector<std::vector<std::pair<int, MappingPath<EdgeId>>>>& mapping_record,
-                  std::vector<std::vector<std::tuple<std::string, std::string, std::string>>>& read_record,
+                  std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>>& read_record,
                   int read_index)
     // Store the reads in the analysis structures (tmp_connected and tmp_mapping) and the reporting structure (tmp_reads).
     {
@@ -122,11 +122,11 @@ namespace debruijn_graph {
         if ( check_forward(read_index) ) {
             connected_reads.back().back().push_back( read_index + 1 ); // Connect first read to second read.
             read_record.back().emplace_back( std::make_tuple( read.name(), read.GetSequenceString(),
-                                                              read.GetPhredQualityString() ) );
+                                                              read.GetPhredQualityString(), 1) );
         } else {
             connected_reads.back().back().push_back( read_index - 1 ); // Connect second read to first read.
             read_record.back().emplace_back( std::make_tuple( read.name(), Reverse(Complement(read.GetSequenceString())),
-                                                              Reverse(read.GetPhredQualityString()) ) );
+                                                              Reverse(read.GetPhredQualityString()), 2) );
         }
     }
 
@@ -212,11 +212,43 @@ namespace debruijn_graph {
         return num_reads_total;
     }
 
+    void OutputReads(std::vector<std::tuple<std::string, std::string, std::string, int>>& master_record,
+                     std::ofstream& fastq_stream_forward,
+                     std::ofstream& fastq_stream_reverse)
+    // Report read clouds.
+    {
+        std::map<std::string,std::tuple<std::string, std::string, std::string>> holding_space;
+        std::string fastq_string_forward = "";
+        std::string fastq_string_reverse = "";
+        while ( !master_record.empty() ){
+            auto curr_read = master_record.front();
+            auto read_name = std::get<0>(curr_read);
+            if ( holding_space.find(read_name) == holding_space.end() ) { // Current read is first read in the set.
+                holding_space[read_name] = std::make_tuple( std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read) );
+            } else { // Current read is second read in the set. Output both.
+                auto prev_read = holding_space[read_name];
+                if (std::get<3>(curr_read) == 2) {
+                    fastq_string_forward += MakeFastQString(std::get<0>(prev_read), std::get<1>(prev_read), std::get<2>(prev_read));
+                    fastq_string_reverse += MakeFastQString(std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read));
+                } else {
+                    fastq_string_forward += MakeFastQString(std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read));
+                    fastq_string_reverse += MakeFastQString(std::get<0>(prev_read), std::get<1>(prev_read), std::get<2>(prev_read));
+                }
+                holding_space.erase(read_name);
+            }
+            master_record.erase(master_record.begin());
+        }
+        fastq_stream_forward << fastq_string_forward << flush;
+        fastq_stream_reverse << fastq_string_reverse << flush;
+    }
+
     int LoadReads(std::vector<std::vector<std::vector<int>>>& connected_reads,
                   std::vector<std::vector<std::pair<int, MappingPath<EdgeId>>>>& mapping_record,
-                  std::vector<std::vector<std::tuple<std::string, std::string, std::string>>>& read_record,
+                  std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>>& read_record,
                   debruijn_graph::conj_graph_pack& graph_pack,
-                  const lib_t& lib_10x, int num_reads_start, int num_reads_goal)
+                  const lib_t& lib_10x, int num_reads_start, int num_reads_goal,
+                  std::ofstream& fastq_stream_forward,
+                  std::ofstream& fastq_stream_reverse)
     // Divides reads from library in PairedEasyStream into the original read clouds.
     {
         // Tools to locate reads along the compacted de Bruijn graph.
@@ -227,6 +259,7 @@ namespace debruijn_graph {
         std::string current_barcode;
         int num_cloud_reads = 0;
         int num_reads_total = 0;
+        std::vector<std::tuple<std::string, std::string, std::string, int>> unbarcoded_record; 
 
         while ( !stream->eof() ) {
             *stream >> read;
@@ -238,20 +271,29 @@ namespace debruijn_graph {
             }
             num_reads_total += 2;
             std::string barcode_string = GetTenXBarcodeFromRead(read);
-            if ( barcode_string.empty() || ( barcode_string != current_barcode ) ){ // This read belongs to the next read-cloud. Start new storage objects.
-                connected_reads.emplace_back( std::vector<std::vector<int>>() );
-                mapping_record.emplace_back( std::vector<std::pair<int, MappingPath<EdgeId>>>() );
-                read_record.emplace_back( std::vector<std::tuple<std::string, std::string, std::string>>() );
-                num_cloud_reads = 0;
-            }
-            // For each pair of reads, map them to the assembly graph and extract their FastQ information.
-            MakeRead(read.first(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads);
-            MakeRead(read.second(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads + 1);
+            if ( barcode_string.empty() ) { // This read is not barcoded. Output straight away.
+                unbarcoded_record.emplace_back( std::make_tuple( read.first().name(), read.first().GetSequenceString(),
+                                                                 read.first().GetPhredQualityString(), 1) );
+                unbarcoded_record.emplace_back( std::make_tuple( read.second().name(), Reverse(Complement(read.second().GetSequenceString())),
+                                                                 Reverse(read.second().GetPhredQualityString()), 2) );
+            } else {
+                if ( barcode_string != current_barcode ){ // This barcoded read belongs to the next read-cloud. Start new storage objects.
+                    connected_reads.emplace_back( std::vector<std::vector<int>>() );
+                    mapping_record.emplace_back( std::vector<std::pair<int, MappingPath<EdgeId>>>() );
+                    read_record.emplace_back( std::vector<std::tuple<std::string, std::string, std::string, int>>() );
+                    num_cloud_reads = 0;
+                }
+                // For each pair of reads, map them to the assembly graph and extract their FastQ information.
+                MakeRead(read.first(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads);
+                MakeRead(read.second(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads + 1);
 
-            num_cloud_reads += 2;
-            current_barcode = barcode_string;
+                num_cloud_reads += 2;
+                current_barcode = barcode_string;
+            }
         }
         stream->close();
+
+        OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
         int num_reads_loaded = num_reads_total - num_reads_start;
         INFO(num_reads_loaded << " reads loaded");
         return num_reads_total;
@@ -345,19 +387,19 @@ namespace debruijn_graph {
         }
     }
 
-    std::vector<std::tuple<std::string, std::string, std::string>> MakeEnhanced(std::vector<std::vector<int>>& tmp_connected,
-                     std::vector<std::tuple<std::string, std::string, std::string>>& tmp_reads, int cloud_size_filter,
+    std::vector<std::tuple<std::string, std::string, std::string, int>> MakeEnhanced(std::vector<std::vector<int>>& tmp_connected,
+                     std::vector<std::tuple<std::string, std::string, std::string, int>>& tmp_reads, int cloud_size_filter,
                      std::ofstream& enh_cloud_stats)
     // Cluster reads that are in the same enhanced read by depth-first traversing through sets of connected reads.
     {
-        std::vector<std::tuple<std::string, std::string, std::string>> master_record;
+        std::vector<std::tuple<std::string, std::string, std::string, int>> master_record;
         std::string barcode = GetTenXBarcodeFromRead(std::get<0>(tmp_reads[0]));
 
         if ( tmp_reads.size() >= cloud_size_filter ) { // If the original read cloud is larger than the mean...
             std::vector<int> cloud_queue;
             std::vector<int> visited_reads;
-            std::vector<std::vector<std::tuple<std::string, std::string, std::string>>> enhanced_record;
-            std::vector<std::tuple<std::string, std::string, std::string>> unenhanced_record;
+            std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>> enhanced_record;
+            std::vector<std::tuple<std::string, std::string, std::string, int>> unenhanced_record;
 
             for (size_t i = 0; i < tmp_connected.size(); ++i) {
                 auto read_find = std::find(visited_reads.begin(), visited_reads.end(), i);
@@ -365,7 +407,7 @@ namespace debruijn_graph {
                     size_t num_reads = 0; // The number of reads in the enhanced cloud.
                     visited_reads.push_back(i); // Add read index to vector of already-grouped reads.
                     cloud_queue.push_back(i);
-                    std::vector<std::tuple<std::string, std::string, std::string>> temporary_enhanced;
+                    std::vector<std::tuple<std::string, std::string, std::string, int>> temporary_enhanced;
                     do {
                         int &cloud_index = cloud_queue.front(); // Get the unique index of read j.
                         temporary_enhanced.emplace_back(tmp_reads[cloud_index]);
@@ -405,7 +447,7 @@ namespace debruijn_graph {
                                 << std::endl; // Reporting un-enhanced read cloud information.
                 for (auto &read : unenhanced_record) {
                     master_record.emplace_back(std::make_tuple(GetUpdatedReadName(std::get<0>(read), 0),
-                                                               std::get<1>(read), std::get<2>(read)));
+                                                               std::get<1>(read), std::get<2>(read), std::get<3>(read)));
                 }
             }
             for (size_t i = 0; i < enhanced_record.size(); ++i) {
@@ -414,43 +456,18 @@ namespace debruijn_graph {
                                 << std::endl; // Reporting un-enhanced read cloud information.
                 for (auto &read : enhanced_record[i]) {
                     master_record.emplace_back(std::make_tuple(GetUpdatedReadName(std::get<0>(read), enh_index),
-                                                               std::get<1>(read), std::get<2>(read)));
+                                                               std::get<1>(read), std::get<2>(read), std::get<3>(read)));
                 }
             }
         } else { // Otherwise, add the whole original read cloud to the output stream.
             for ( auto& read : tmp_reads ) {
                 master_record.emplace_back(std::make_tuple( GetUpdatedReadName(std::get<0>(read), 0),
-                                                                std::get<1>(read), std::get<2>(read)) );
+                                                                std::get<1>(read), std::get<2>(read), std::get<3>(read)) );
             }
             if ( barcode.empty() ) barcode = "NA"; // If this is an unbarcoded read-pair, set it to NA.
             enh_cloud_stats << barcode << "," << 0 << "," << master_record.size() << std::endl; // Reporting un-enhanced read cloud information.
         }
         return master_record;
-    }
-
-    void OutputReads(std::vector<std::tuple<std::string, std::string, std::string>>& master_record,
-                     std::ofstream& fastq_stream_forward,
-                     std::ofstream& fastq_stream_reverse)
-    // Report read clouds.
-    {
-        std::map<std::string,std::tuple<std::string, std::string, std::string>> holding_space; 
-        std::string fastq_string_forward = "";
-        std::string fastq_string_reverse = "";
-        while ( !master_record.empty() ){
-            auto curr_read = master_record.front();
-            auto read_name = std::get<0>(curr_read); 
-            if ( holding_space.find(read_name) == holding_space.end() ) { // Current read is first read in the set.
-                holding_space[read_name] = std::make_tuple( std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read) );
-            } else { // Current read is second read in the set. Output both. 
-                auto prev_read = holding_space[read_name];
-                fastq_string_forward += MakeFastQString(std::get<0>(prev_read), std::get<1>(prev_read), std::get<2>(prev_read));
-                fastq_string_reverse += MakeFastQString(std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read));
-                holding_space.erase(read_name);
-            }
-            master_record.erase(master_record.begin());
-        }
-        fastq_stream_forward << fastq_string_forward << flush;
-        fastq_stream_reverse << fastq_string_reverse << flush;
     }
 
     /*
@@ -476,7 +493,7 @@ namespace debruijn_graph {
         // Collection of read information from the original read clouds
         std::vector<std::vector<std::vector<int>>> connected_reads;
         std::vector<std::vector<std::pair<int, MappingPath<EdgeId>>>> mapping_record;
-        std::vector<std::vector<std::tuple<std::string, std::string, std::string>>> read_record;
+        std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>> read_record;
 
         // Setting memory-based limits on read-chunks loaded at once.
         int num_loadable_reads = (int)((utils::get_free_memory() * 1.0) / 850 ); // Available memory / estimated memory per read in bytes
@@ -488,7 +505,7 @@ namespace debruijn_graph {
 
         while (num_reads_section_end < num_reads_total ) {
             INFO("Loading original read clouds from library");
-            num_reads_section_end = LoadReads(connected_reads, mapping_record, read_record, gp, lib_10x, num_reads_section_end, num_reads_section_goal);
+            num_reads_section_end = LoadReads(connected_reads, mapping_record, read_record, gp, lib_10x, num_reads_section_end, num_reads_section_goal, fastq_stream_forward, fastq_stream_reverse);
             size_t num_original_clouds = mapping_record.size();
             INFO(num_original_clouds << " original read clouds loaded");
 #pragma omp parallel for shared(connected_reads, mapping_record, read_record) schedule(dynamic, 1) num_threads(cfg::get().max_threads)
@@ -501,7 +518,7 @@ namespace debruijn_graph {
                 }
 #pragma omp critical
                 {
-                    std::vector<std::tuple<std::string, std::string, std::string>> master_record = MakeEnhanced(connected_reads[c], read_record[c], cloud_size_filter, stat_stream);
+                    std::vector<std::tuple<std::string, std::string, std::string, int>> master_record = MakeEnhanced(connected_reads[c], read_record[c], cloud_size_filter, stat_stream);
                     OutputReads(master_record, fastq_stream_forward, fastq_stream_reverse);
                 }
             }
