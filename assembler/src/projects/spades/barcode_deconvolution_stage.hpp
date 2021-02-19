@@ -9,13 +9,13 @@
 #include "utils/memory_limit.hpp"
 #include <algorithm>
 #include <cstdlib>
+#include <map>
 #include <numeric>
 #include <omp.h>
 #include <string>
 #include <sstream>
 #include <stdio.h>
 #include <string.h>
-#include <unordered_map>
 #include <vector>
 
 namespace debruijn_graph {
@@ -125,7 +125,7 @@ namespace debruijn_graph {
                                                               read.GetPhredQualityString() ) );
         } else {
             connected_reads.back().back().push_back( read_index - 1 ); // Connect second read to first read.
-            read_record.back().emplace_back( std::make_tuple( read.name(), Complement(read.GetSequenceString()),
+            read_record.back().emplace_back( std::make_tuple( read.name(), Reverse(Complement(read.GetSequenceString())),
                                                               Reverse(read.GetPhredQualityString()) ) );
         }
     }
@@ -433,19 +433,20 @@ namespace debruijn_graph {
                      std::ofstream& fastq_stream_reverse)
     // Report read clouds.
     {
-        int direction = 0;
+        std::map<std::string,std::tuple<std::string, std::string, std::string>> holding_space; 
         std::string fastq_string_forward = "";
         std::string fastq_string_reverse = "";
         while ( !master_record.empty() ){
-            auto read = master_record.front();
-            if ( check_forward(direction) ) { // If first read in pair, put in forward file.
-                fastq_string_forward += MakeFastQString(std::get<0>(read), std::get<1>(read), std::get<2>(read));
-//                fastq_stream_forward << MakeFastQString(std::get<0>(read), std::get<1>(read), std::get<2>(read)) << std::endl;
-            } else { // If second read in pair, put in reverse complement file.
-                fastq_string_reverse += MakeFastQString(std::get<0>(read), std::get<1>(read), std::get<2>(read));
-//                fastq_stream_reverse << MakeFastQString(std::get<0>(read), std::get<1>(read), std::get<2>(read)) << std::endl;
+            auto curr_read = master_record.front();
+            auto read_name = std::get<0>(curr_read); 
+            if ( holding_space.find(read_name) == holding_space.end() ) { // Current read is first read in the set.
+                holding_space[read_name] = std::make_tuple( std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read) );
+            } else { // Current read is second read in the set. Output both. 
+                auto prev_read = holding_space[read_name];
+                fastq_string_forward += MakeFastQString(std::get<0>(prev_read), std::get<1>(prev_read), std::get<2>(prev_read));
+                fastq_string_reverse += MakeFastQString(std::get<0>(curr_read), std::get<1>(curr_read), std::get<2>(curr_read));
+                holding_space.erase(read_name);
             }
-            ++direction;
             master_record.erase(master_record.begin());
         }
         fastq_stream_forward << fastq_string_forward << flush;
