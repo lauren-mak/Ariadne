@@ -272,9 +272,13 @@ namespace debruijn_graph {
             num_reads_total += 2;
             std::string barcode_string = GetTenXBarcodeFromRead(read);
             if ( barcode_string.empty() ) { // This read is not barcoded. Output straight away.
-                unbarcoded_record.emplace_back( std::make_tuple( read.first().name(), read.first().GetSequenceString(),
+                std::string first_in_pair = read.first().name(); 
+                std::string second_in_pair = read.second().name(); 
+                unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(first_in_pair, 0), 
+                                                                 read.first().GetSequenceString(),
                                                                  read.first().GetPhredQualityString(), 1) );
-                unbarcoded_record.emplace_back( std::make_tuple( read.second().name(), Reverse(Complement(read.second().GetSequenceString())),
+                unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(second_in_pair, 0), 
+                                                                 Reverse(Complement(read.second().GetSequenceString())),
                                                                  Reverse(read.second().GetPhredQualityString()), 2) );
             } else {
                 if ( barcode_string != current_barcode ){ // This barcoded read belongs to the next read-cloud. Start new storage objects.
@@ -292,7 +296,7 @@ namespace debruijn_graph {
             }
         }
         stream->close();
-
+        INFO(unbarcoded_record.size() << " unbarcoded reads, now outputting");
         OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
         int num_reads_loaded = num_reads_total - num_reads_start;
         INFO(num_reads_loaded << " reads loaded");
