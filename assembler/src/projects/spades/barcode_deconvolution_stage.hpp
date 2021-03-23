@@ -259,45 +259,50 @@ namespace debruijn_graph {
         std::string current_barcode;
         int num_cloud_reads = 0;
         int num_reads_total = 0;
-        std::vector<std::tuple<std::string, std::string, std::string, int>> unbarcoded_record; 
+        // std::vector<std::tuple<std::string, std::string, std::string, int>> unbarcoded_record; 
 
         while ( !stream->eof() ) {
             *stream >> read;
+            std::string barcode_string = GetTenXBarcodeFromRead(read);
+            if ( barcode_string.empty() ) { // If these reads do not have barcodes, skip.
+                num_reads_total += 2;
+                continue;
+            }
             if ( num_reads_total + 2 <= num_reads_start ) { // If these reads have already been loaded, skip.
+                num_reads_total += 2;
                 continue;
             }
             if ( num_reads_total + 2 > num_reads_goal ) { // If loading two more reads puts the number over the limit, stop.
                 break;
             }
             num_reads_total += 2;
-            std::string barcode_string = GetTenXBarcodeFromRead(read);
-            if ( barcode_string.empty() ) { // This read is not barcoded. Output straight away.
-                std::string first_in_pair = read.first().name(); 
-                std::string second_in_pair = read.second().name(); 
-                unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(first_in_pair, 0), 
-                                                                 read.first().GetSequenceString(),
-                                                                 read.first().GetPhredQualityString(), 1) );
-                unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(second_in_pair, 0), 
-                                                                 Reverse(Complement(read.second().GetSequenceString())),
-                                                                 Reverse(read.second().GetPhredQualityString()), 2) );
-            } else {
-                if ( barcode_string != current_barcode ){ // This barcoded read belongs to the next read-cloud. Start new storage objects.
-                    connected_reads.emplace_back( std::vector<std::vector<int>>() );
-                    mapping_record.emplace_back( std::vector<std::pair<int, MappingPath<EdgeId>>>() );
-                    read_record.emplace_back( std::vector<std::tuple<std::string, std::string, std::string, int>>() );
-                    num_cloud_reads = 0;
-                }
-                // For each pair of reads, map them to the assembly graph and extract their FastQ information.
-                MakeRead(read.first(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads);
-                MakeRead(read.second(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads + 1);
-
-                num_cloud_reads += 2;
-                current_barcode = barcode_string;
+            // if ( barcode_string.empty() ) { // This read is not barcoded. Output straight away.
+            //     std::string first_in_pair = read.first().name(); 
+            //     std::string second_in_pair = read.second().name(); 
+            //     unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(first_in_pair, 0), 
+            //                                                      read.first().GetSequenceString(),
+            //                                                      read.first().GetPhredQualityString(), 1) );
+            //     unbarcoded_record.emplace_back( std::make_tuple( GetUpdatedReadName(second_in_pair, 0), 
+            //                                                      Reverse(Complement(read.second().GetSequenceString())),
+            //                                                      Reverse(read.second().GetPhredQualityString()), 2) );
+            // } else {
+            if ( barcode_string != current_barcode ){ // This barcoded read belongs to the next read-cloud. Start new storage objects.
+                connected_reads.emplace_back( std::vector<std::vector<int>>() );
+                mapping_record.emplace_back( std::vector<std::pair<int, MappingPath<EdgeId>>>() );
+                read_record.emplace_back( std::vector<std::tuple<std::string, std::string, std::string, int>>() );
+                num_cloud_reads = 0;
             }
+            // For each pair of reads, map them to the assembly graph and extract their FastQ information.
+            MakeRead(read.first(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads);
+            MakeRead(read.second(), graph_pack, connected_reads, mapping_record, read_record, num_cloud_reads + 1);
+
+            num_cloud_reads += 2;
+            current_barcode = barcode_string;
+            // }
         }
         stream->close();
-        INFO(unbarcoded_record.size() << " unbarcoded reads, now outputting");
-        OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
+        // INFO(unbarcoded_record.size() << " unbarcoded reads, now outputting");
+        // OutputReads(unbarcoded_record, fastq_stream_forward, fastq_stream_reverse);
         int num_reads_loaded = num_reads_total - num_reads_start;
         INFO(num_reads_loaded << " reads loaded");
         return num_reads_total;
@@ -468,7 +473,7 @@ namespace debruijn_graph {
                 master_record.emplace_back(std::make_tuple( GetUpdatedReadName(std::get<0>(read), 0),
                                                                 std::get<1>(read), std::get<2>(read), std::get<3>(read)) );
             }
-            if ( barcode.empty() ) barcode = "NA"; // If this is an unbarcoded read-pair, set it to NA.
+            // if ( barcode.empty() ) barcode = "NA"; // If this is an unbarcoded read-pair, set it to NA.
             enh_cloud_stats << barcode << "," << 0 << "," << master_record.size() << std::endl; // Reporting un-enhanced read cloud information.
         }
         return master_record;
@@ -517,7 +522,8 @@ namespace debruijn_graph {
                 if (c % 100000 == 0) {
                     INFO(c << ": Deconvolving and reporting " << mapping_record[c].size() << " reads on thread " << omp_get_thread_num());
                 }
-                if ( mapping_record[c].size() >= cloud_size_filter ) {
+                std::string barcode_string = GetTenXBarcodeFromRead(std::get<0>(read_record[c][0]));
+                if ( barcode_string != "NA" && mapping_record[c].size() >= cloud_size_filter ) {
                     ClusterReads(connected_reads[c], mapping_record[c], gp);
                 }
 #pragma omp critical
