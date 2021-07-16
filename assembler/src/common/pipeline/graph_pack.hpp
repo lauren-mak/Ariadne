@@ -22,10 +22,13 @@
 #include "modules/alignment/long_read_storage.hpp"
 #include "assembly_graph/graph_support/detail_coverage.hpp"
 #include "assembly_graph/components/connected_component.hpp"
+#include "common/barcode_index/barcode_index.hpp"
 #include "modules/alignment/kmer_mapper.hpp"
 #include "visualization/position_filler.hpp"
 #include "assembly_graph/paths/bidirectional_path_container.hpp"
 #include "common/modules/alignment/rna/ss_coverage.hpp"
+#include "common/modules/path_extend/read_cloud_path_extend/scaffold_graph_construction/scaffold_graph_storage.hpp"
+#include "common/modules/path_extend/read_cloud_path_extend/fragment_model/distribution_extractor.hpp"
 
 namespace debruijn_graph {
 
@@ -39,6 +42,7 @@ struct graph_pack: private boost::noncopyable {
     using PairedInfoIndicesT = omnigraph::de::PairedInfoIndicesT<Graph>;
     typedef omnigraph::de::UnclusteredPairedInfoIndicesT<Graph> UnclusteredPairedInfoIndicesT;
     typedef LongReadContainer<Graph> LongReadContainerT;
+    typedef barcode_index::AbstractBarcodeIndex BMapper;
 
     size_t k_value;
     std::string workdir;
@@ -53,6 +57,11 @@ struct graph_pack: private boost::noncopyable {
     LongReadContainerT single_long_reads;
     vector<SSCoverageStorage> ss_coverage;
     GenomicInfo ginfo;
+
+    std::shared_ptr <BMapper> barcode_mapper_ptr;
+    path_extend::ScaffoldGraphStorage scaffold_graph_storage;
+  //todo merge it with LibData
+    path_extend::cluster_model::DistributionPack read_cloud_distribution_pack;
 
     GenomeStorage genome;
     EdgeQuality<Graph> edge_qual;
@@ -76,6 +85,9 @@ struct graph_pack: private boost::noncopyable {
               scaffolding_indices(g, lib_count),
               single_long_reads(g, lib_count),
               ss_coverage(lib_count, SSCoverageStorage(g)),
+              barcode_mapper_ptr(),
+              scaffold_graph_storage(g),
+              read_cloud_distribution_pack(),
               genome(genome),
               edge_qual(g),
               edge_pos(g, max_mapping_gap + k, max_gap_diff),

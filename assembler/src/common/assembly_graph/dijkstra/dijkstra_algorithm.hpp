@@ -114,7 +114,7 @@ class Dijkstra {
             if (!DistanceCounted(cur_pair.vertex)) {
                 TRACE("Adding new entry to queue");
                 distance_t new_dist = GetLength(cur_pair.edge) + cur_dist;
-                TRACE("Entry: vertex " << graph_.str(cur_vertex) << " distance " << new_dist);
+                TRACE("Entry: vertex " << graph_.str(cur_pair.vertex) << " distance " << new_dist);
                 if (CheckPutVertex(cur_pair.vertex, cur_pair.edge, new_dist)) {
                     TRACE("CheckPutVertex returned true and new entry is added");
                     queue.push(element_t<Graph, distance_t>(new_dist, cur_pair.vertex,
@@ -161,6 +161,10 @@ public:
         distances_map_ci end = distances_.end();
         return make_pair(begin, end);
     }
+
+    const std::map<VertexId, std::pair<VertexId, EdgeId>>& GetPrevMap() const {
+        return prev_vert_map_;
+    };
 
     void Run(VertexId start) {
         TRACE("Starting dijkstra run from vertex " << graph_.str(start));

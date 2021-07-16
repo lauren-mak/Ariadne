@@ -23,3 +23,5 @@ bh_config.info
 bin
 build_spades
 share
+src/cmake-build-debug
+pictures_*

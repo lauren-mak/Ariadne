@@ -19,7 +19,10 @@
 #include "path_filter.hpp"
 #include "overlap_analysis.hpp"
 #include "assembly_graph/graph_support/scaff_supplementary.hpp"
+#include "read_cloud_path_extend/read_cloud_dijkstras.hpp"
 #include <cmath>
+#include "read_cloud_path_extend/extender_support/entry_collectors.hpp"
+#include "read_cloud_path_extend/extender_support/candidate_selectors.hpp"
 
 namespace path_extend {
 
@@ -870,6 +873,7 @@ private:
         size_t current = 0;
         while (current < extenders_.size()) {
             DEBUG("step " << current << " of total " << extenders_.size());
+            DEBUG("Path size: " << path.Size());
             if (extenders_[current]->MakeGrowStep(path, paths_storage)) {
                 return true;
             }
@@ -877,7 +881,7 @@ private:
         }
         return false;
     }
-    
+
     void GrowAllPaths(PathContainer& paths, PathContainer& result) {
         for (size_t i = 0; i < paths.size(); ++i) {
             VERBOSE_POWER_T2(i, 100, "Processed " << i << " paths from " << paths.size() << " (" << i * 100 / paths.size() << "%)");
@@ -924,7 +928,7 @@ private:
             }
         }
     }
-
+    DECL_LOGGER("CompositeExtender")
 };
 
 //All Path-Extenders inherit this one
@@ -1011,6 +1015,7 @@ public:
 
 
     bool MakeGrowStep(BidirectionalPath& path, PathContainer* paths_storage) override {
+        DEBUG("cov map size: " << cov_map_.size());
         if (is_detector_.InExistingLoop(path)) {
             DEBUG("in existing loop");
             return false;
@@ -1029,8 +1034,11 @@ public:
             result = ResolveShortLoop(path);
         } else {
             DEBUG("Making step");
+            DEBUG("Last edge in the path: " << path.Back().int_id());
+            DEBUG("Conjugate: " << g_.conjugate(path.Back()).int_id());
             result = MakeSimpleGrowStep(path, paths_storage);
             DEBUG("Made step");
+            DEBUG("Path size: " << path.Size());
             if (DetectCycle(path)) {
                 result = false;
             } else if (path.Size() >= 1 && InvestigateShortLoop() && loop_detector.EdgeInShortLoop(path.Back())) {
@@ -1068,7 +1076,7 @@ protected:
     ShortLoopResolver loop_resolver_;
     double weight_threshold_;
 
-    void FindFollowingEdges(BidirectionalPath& path, ExtensionChooser::EdgeContainer * result) {
+    virtual void FindFollowingEdges(BidirectionalPath& path, ExtensionChooser::EdgeContainer * result) {
         DEBUG("Looking for the following edges")
         result->clear();
         vector<EdgeId> edges;
@@ -1238,6 +1246,105 @@ protected:
 
 };
 
+//fixme code duplication(MultiExtender)
+//todo add custom path predicate instead of length bound
+class SearchingMultiExtender: public SimpleExtender {
+ protected:
+    std::unordered_set<VertexId> visited_vertices_;
+    QueueContainer& path_container_;
+    const size_t length_bound_;
+
+ public:
+    SearchingMultiExtender(const conj_graph_pack &gp,
+                  const GraphCoverageMap &cov_map,
+                  UsedUniqueStorage &unique,
+                  shared_ptr<ExtensionChooser> ec,
+                  size_t is,
+                  bool investigate_short_loops,
+                  bool use_short_loop_cov_resolver,
+                  double weight_threshold,
+                  size_t length_bound,
+                  QueueContainer& path_container) :
+        SimpleExtender(gp, cov_map, unique, ec, is, investigate_short_loops, use_short_loop_cov_resolver, weight_threshold),
+        visited_vertices_(), path_container_(path_container), length_bound_(length_bound)
+    {}
+
+    std::unordered_set<VertexId> GetReachedVertices() {
+        return visited_vertices_;
+    }
+
+ protected:
+    bool SearchingAddCandidates(BidirectionalPath& path, ExtensionChooser::EdgeContainer& candidates,
+                                QueueContainer& path_container, std::unordered_set<VertexId>& visited_vertices,
+                                size_t length_bound) {
+        if (candidates.size() == 0)
+            return false;
+
+        VERIFY(path.Size() >= 1);
+        if (path.Size() > 1 and path.LengthAt(1) > length_bound) {
+            DEBUG("Path is too long");
+            return false;
+        }
+
+        if (candidates.size() == 1) {
+            DEBUG("push");
+            EdgeId eid = candidates.back().e_;
+            path.PushBack(eid, Gap(candidates.back().d_));
+            visited_vertices.insert(g_.EdgeEnd(eid));
+            DEBUG("push done");
+            return true;
+        }
+
+        //Creating new paths for other than new candidate.
+        for (size_t i = 1; i < candidates.size(); ++i) {
+            auto candidate = candidates[i];
+            DEBUG("push other candidate " << candidate.e_.int_id());
+            BidirectionalPath* p = new BidirectionalPath(path);
+            p->PushBack(candidate.e_, Gap(candidate.d_));
+            path_container.push(p);
+            DEBUG("Inserting vertex " << g_.EdgeEnd(candidate.e_));
+            visited_vertices.insert(g_.EdgeEnd(candidate.e_));
+        }
+
+        DEBUG("push");
+        path.PushBack(candidates.front().e_, Gap(candidates.front().d_));
+        DEBUG("push done");
+        DEBUG("Inserting vertex " << g_.EdgeEnd(candidates.front().e_));
+        visited_vertices.insert(g_.EdgeEnd(candidates.front().e_));
+
+        if (candidates.size() > 1) {
+            DEBUG("Found " << candidates.size() << " candidates");
+        }
+
+        return true;
+    }
+
+    bool AddCandidates(BidirectionalPath& path, PathContainer* /*paths_storage*/,
+                       ExtensionChooser::EdgeContainer& candidates) override {
+        ExtensionChooser::EdgeContainer loop_checked_candidates;
+        auto loop_check = [&path, this](const EdgeWithDistance ewd) {
+          return LoopCheck(path, ewd.e_);
+        };
+        std::copy_if(candidates.begin(), candidates.end(), std::back_inserter(loop_checked_candidates), loop_check);
+        return SearchingAddCandidates(path, loop_checked_candidates, path_container_, visited_vertices_, length_bound_);
+    }
+
+ private:
+    bool LoopCheck(BidirectionalPath& path, const EdgeId& edge) const {
+        LoopDetector loop_detector(&path, cov_map_);
+        DEBUG("loop detector");
+        if (!investigate_short_loops_ &&
+            (loop_detector.EdgeInShortLoop(path.Back()) or loop_detector.EdgeInShortLoop(edge))
+            && extensionChooser_->WeightCounterBased()) {
+            DEBUG("loop detected");
+            return false;
+        }
+        return true;
+    }
+
+    DECL_LOGGER("SearchingMultiExtender")
+};
+
 
 class ScaffoldingPathExtender: public LoopDetectingPathExtender {
     std::shared_ptr<ExtensionChooser> extension_chooser_;
@@ -1250,7 +1357,6 @@ class ScaffoldingPathExtender: public LoopDetectingPathExtender {
 
     void InitSources() {
         sources_.clear();
-
         for (auto iter = g_.ConstEdgeBegin(); !iter.IsEnd(); ++iter) {
             if (g_.IncomingEdgeCount(g_.EdgeStart(*iter)) == 0) {
                 sources_.push_back(EdgeWithDistance(*iter, 0));
@@ -1271,6 +1377,13 @@ class ScaffoldingPathExtender: public LoopDetectingPathExtender {
                    {uint32_t(gap.left_trim()), uint32_t(gap.right_trim())}, false);
     }
 
+    struct EdgeWithGap {
+      EdgeId edge_;
+      Gap gap_;
+
+      EdgeWithGap(const EdgeId &edge_, const Gap &gap_) : edge_(edge_), gap_(gap_) {}
+    };
+
 protected:
     virtual bool CheckGap(const Gap &/*gap*/) const {
         return true;
@@ -1284,11 +1397,60 @@ protected:
         return false;
     }
 
-    //TODO fix awful design with virtual CheckGap and must_overlap flag!
-    bool MakeSimpleGrowStepForChooser(BidirectionalPath& path, std::shared_ptr<ExtensionChooser> ec,
-                                      bool must_overlap = false) {
-        if (path.Size() < 1 || (check_sink_ && !IsSink(path.Back()))) {
+    bool CheckEdge(BidirectionalPath& path, const EdgeId& e) {
+        if (e == path.Back()
+            || (avoid_rc_connections_ && e == g_.conjugate(path.Back()))) {
+            DEBUG("RC connection");
             return false;
+        }
+
+        if (this->DetectCycleScaffolding(path, e)) {
+            DEBUG("Cycle scaffolding")
+            return false;
+        }
+        return true;
+    }
+
+    boost::optional<Gap> GetGap(const BidirectionalPath& path, const EdgeWithDistance& candidate,
+                                bool must_overlap, const EdgeId& e) {
+        boost::optional<Gap> result;
+        Gap gap;
+        //TODO is it ok that we either force joining or ignore its possibility
+        if (check_sink_) {
+            gap = ConvertGapDescription(gap_analyzer_->FixGap(GapDescription(path.Back(), e,
+                                                                             candidate.d_ - int(g_.k()))));
+
+            if (gap == Gap::INVALID()) {
+                DEBUG("Looks like wrong scaffolding. PathId: "
+                          << path.GetId() << " path length: " << path.Length()
+                          << ", estimated gap length: " << candidate.d_);
+                return result;
+            }
+
+            DEBUG("Gap after fixing " << gap.gap << " (was " << candidate.d_ << ")");
+
+            if (must_overlap && !CheckGap(gap)) {
+                DEBUG("Overlap is not large enough")
+                return result;
+            }
+
+            return gap;
+        } else {
+            DEBUG("Gap joiners off");
+            VERIFY(candidate.d_ > int(g_.k()));
+            gap = Gap(candidate.d_, false);
+            result = gap;
+            return result;
+        }
+        return result;
+    }
+
+    //todo Slower version, discuss this
+    vector<EdgeWithGap> GetCandidates(BidirectionalPath& path, std::shared_ptr<ExtensionChooser> ec,
+                                      bool must_overlap = false) {
+        vector<EdgeWithGap> result;
+        if (path.Size() < 1 || (check_sink_ && !IsSink(path.Back()))) {
+            return result;
         }
 
         DEBUG("Simple grow step, growing path");
@@ -1297,48 +1459,41 @@ protected:
         DEBUG("scaffolding candidates " << candidates.size() << " from sources " << sources_.size());
 
         DEBUG("Candidate size = " << candidates.size())
+        for (const auto& candidate: candidates) {
+            EdgeId e = candidate.e_;
+            DEBUG(e.int_id());
+            if (not CheckEdge(path, e)) {
+                DEBUG("Edge check failed")
+                continue;
+            }
+
+            boost::optional<Gap> gap = GetGap(path, candidate, must_overlap, e);
+            if (not gap.is_initialized()) {
+                DEBUG("Gap is not initialized")
+                continue;
+            }
+            EdgeWithGap ewg(e, NormalizeGap(gap.get()));
+            result.push_back(ewg);
+        }
+
+        return result;
+    }
+
+    //TODO fix awful design with virtual CheckGap and must_overlap flag!
+    bool MakeSimpleGrowStepForChooser(BidirectionalPath& path, std::shared_ptr<ExtensionChooser> ec,
+                                      bool must_overlap = false) {
+        auto candidates = GetCandidates(path, ec, must_overlap);
+
+        DEBUG("Candidate size = " << candidates.size())
         if (candidates.size() != 1) {
             DEBUG("scaffolding end");
             return false;
         }
 
-        EdgeId e = candidates.back().e_;
-        if (e == path.Back()
-            || (avoid_rc_connections_ && e == g_.conjugate(path.Back()))) {
-            return false;
-        }
+        EdgeId e = candidates.back().edge_;
+        Gap gap = candidates.back().gap_;
 
-        if (this->DetectCycleScaffolding(path, e)) {
-            return false;
-        }
-
-        Gap gap;
-        //TODO is it ok that we either force joining or ignore its possibility
-        if (check_sink_) {
-            gap = ConvertGapDescription(gap_analyzer_->FixGap(GapDescription(path.Back(), e,
-                                                                             candidates.back().d_ -
-                                                                             int(g_.k()))));
-
-            if (gap == Gap::INVALID()) {
-                DEBUG("Looks like wrong scaffolding. PathId: "
-                              << path.GetId() << " path length: " << path.Length()
-                              << ", estimated gap length: " << candidates.back().d_);
-                return false;
-            }
-
-            DEBUG("Gap after fixing " << gap.gap << " (was " << candidates.back().d_ << ")");
-
-            if (must_overlap && !CheckGap(gap)) {
-                DEBUG("Overlap is not large enough")
-                return false;
-            }
-        } else {
-            DEBUG("Gap joiners off");
-            VERIFY(candidates.back().d_ > int(g_.k()));
-            gap = Gap(candidates.back().d_, false);
-        }
-
-        return TryUseEdge(path, e, NormalizeGap(gap));
+        return TryUseEdge(path, e, gap);
     }
 
     Gap NormalizeGap(Gap gap) const {
@@ -1411,6 +1566,219 @@ public:
             MakeSimpleGrowStepForChooser(path, strict_extension_chooser_);
     }
 
+};
+
+//todo discuss this
+class ScaffoldingSearchingMultiExtender: public SearchingMultiExtender, public ScaffoldingPathExtender {
+    shared_ptr<ExtensionChooser> chooser_;
+    using SearchingMultiExtender::path_container_;
+    using SearchingMultiExtender::visited_vertices_;
+    using SearchingMultiExtender::length_bound_;
+
+ public:
+    ScaffoldingSearchingMultiExtender(const conj_graph_pack &gp,
+                                      const GraphCoverageMap &cov_map,
+                                      UsedUniqueStorage &unique,
+                                      shared_ptr<ExtensionChooser> ec,
+                                      size_t is,
+                                      double weight_threshold,
+                                      const shared_ptr<GapAnalyzer> &gap_analyzer,
+                                      QueueContainer &path_container,
+                                      size_t length_bound,
+                                      bool avoid_rc_connections,
+                                      bool check_sink,
+                                      bool investigate_short_loops,
+                                      bool use_short_loop_cov_resolver) :
+                                                         SearchingMultiExtender(gp, cov_map, unique, ec, is,
+                                                                                investigate_short_loops,
+                                                                                use_short_loop_cov_resolver,
+                                                                                weight_threshold,
+                                                                                length_bound, path_container),
+                                                         ScaffoldingPathExtender(gp, cov_map, unique, ec,
+                                                                                 gap_analyzer, is,
+                                                                                 investigate_short_loops,
+                                                                                 avoid_rc_connections,
+                                                                                 check_sink),
+                                                         chooser_(ec) {}
+
+    bool MakeSimpleGrowStep(BidirectionalPath &path, PathContainer* /*paths_storage*/) override {
+        DEBUG("Getting candidates");
+        auto gap_candidates = GetCandidates(path, chooser_);
+        DEBUG("Found " << gap_candidates.size() << " candidates");
+        ExtensionChooser::EdgeContainer candidates;
+        for (const auto& candidate: gap_candidates) {
+            EdgeId e = candidate.edge_;
+            size_t distance = static_cast<size_t>(max(0, candidate.gap_.gap));
+            EdgeWithDistance ewd(e, distance);
+            candidates.push_back(ewd);
+        }
+        if (gap_candidates.size() > 0) {
+            DEBUG("Scaffold extender helped");
+        }
+        return SearchingAddCandidates(path, candidates, path_container_, visited_vertices_, length_bound_);
+    }
+ private:
+    DECL_LOGGER("ScaffoldingSearchingMultiExtender");
+};
+
+class ReadCloudExtender : public SimpleExtender { //Traverse forward to find long edges
+using SimpleExtender::g_;
+protected:
+    RelativeUniquePredicateGetter predicate_getter_;
+    shared_ptr<BarcodeEntryCollector> entry_collector_;
+    shared_ptr<CloudReachableEdgesSelectorFactory> edge_selector_factory_;
+    size_t min_path_length_;
+ public:
+    ReadCloudExtender(const conj_graph_pack &gp,
+                      const GraphCoverageMap &cov_map,
+                      UsedUniqueStorage &unique,
+                      shared_ptr<ExtensionChooser> ec,
+                      size_t is,
+                      bool investigate_short_loops,
+                      bool use_short_loop_cov_resolver,
+                      double weight_threshold,
+                      RelativeUniquePredicateGetter predicate_getter,
+                      shared_ptr<BarcodeEntryCollector> entry_collector,
+                      shared_ptr<CloudReachableEdgesSelectorFactory> edge_selector_factory,
+                      size_t min_path_length) :
+        SimpleExtender(gp, cov_map, unique, ec, is, investigate_short_loops,
+                       use_short_loop_cov_resolver, weight_threshold),
+        predicate_getter_(predicate_getter),
+        entry_collector_(entry_collector),
+        edge_selector_factory_(edge_selector_factory),
+        min_path_length_(min_path_length) {}
+ protected:
+    void FindFollowingEdges(BidirectionalPath &path, ExtensionChooser::EdgeContainer *result) override {
+        ExtensionChooser::EdgeContainer candidates;
+        result->clear();
+        if (path.Length() < min_path_length_) {
+            return;
+        }
+        auto path_barcodes = entry_collector_->CollectEntry(path);
+        DEBUG("Creating dijkstra");
+        auto edge_selector = edge_selector_factory_->ConstructReachableEdgesSelector(path_barcodes);
+        auto reached_edges = edge_selector->SelectReachableEdges(path.Back());
+        auto last_unique_result = GetLastUnique(path);
+        if (not last_unique_result.is_initialized()) {
+            return;
+        }
+        EdgeId last_unique = last_unique_result.get();
+        for (const auto& candidate: reached_edges) {
+            if (candidate.e_ != last_unique and g_.conjugate(candidate.e_) != last_unique) {
+                result->push_back(candidate);
+            }
+        }
+        DEBUG(result->size() << " reached edges");
+    }
+ private:
+    boost::optional<EdgeId> GetLastUnique(const BidirectionalPath &path) const {
+        auto predicate = predicate_getter_.GetPredicate(path);
+        boost::optional<EdgeId> result;
+        for (int i =  (int)path.Size() - 1; i >= 0; --i) {
+            if (predicate(path.At(i))) {
+                result = path.At(i);
+                return result;
+            }
+        }
+        return result;
+    }
+
+    bool IsNotInPath(const BidirectionalPath &path, const EdgeId &edge) const {
+        return path.FindFirst(edge) == -1 and path.FindFirst(g_.conjugate(edge)) == -1;
+    }
+private:
+    DECL_LOGGER("ReadCloudExtender")
+};
+
+class ScaffoldGraphExtender: public PathExtender {
+    typedef path_extend::scaffold_graph::ScaffoldGraph ScaffoldGraph;
+    typedef ScaffoldGraph::ScaffoldEdge ScaffoldEdge;
+    typedef ScaffoldGraph::ScaffoldGraphVertex ScaffoldVertex;
+
+ protected:
+    ScaffoldGraph scaffold_graph_;
+    std::unordered_set<EdgeId> visited_;
+    std::unordered_set<ScaffoldVertex> scaffold_graph_vertices_;
+
+ public:
+    ScaffoldGraphExtender(const Graph &g, const ScaffoldGraph &scaffold_graph_)
+        : PathExtender(g), scaffold_graph_(scaffold_graph_), visited_() {
+        INFO("Constructing scaffold graph vertices");
+        for (const ScaffoldVertex &vertex: scaffold_graph_.vertices()) {
+            scaffold_graph_vertices_.insert(vertex);
+        }
+        INFO("Scaffold graph vertices: " << scaffold_graph_vertices_.size());
+    }
+
+    bool MakeGrowStep(BidirectionalPath& path, PathContainer* /*paths_storage*/) override {
+        boost::optional<EdgeId> last_unique = FindLastUniqueInPath(path, scaffold_graph_vertices_);
+        DEBUG("Found last unique");
+        if (not last_unique.is_initialized()) {
+            return false;
+        } else {
+            DEBUG("Last unique is " << last_unique.get().int_id());
+            auto outgoing_edges = scaffold_graph_.OutgoingEdges(last_unique.get());
+            DEBUG("Found " << outgoing_edges.size() << " candidates");
+            for (const auto& edge: outgoing_edges) {
+                TRACE(edge.getEnd().int_id());
+            }
+            if (outgoing_edges.size() != 1) {
+                return false;
+            }
+            ScaffoldEdge connection = outgoing_edges.back();
+            ScaffoldVertex target = connection.getEnd();
+            auto incoming_edges = scaffold_graph_.IncomingEdges(target);
+            if (incoming_edges.size() != 1) {
+                DEBUG("Non-univocal connection, stop extending");
+                return false;
+            }
+            Gap gap(static_cast<int>(connection.getLength()), {0, 0}, false);
+            ScaffoldVertex next_vertex = connection.getEnd();
+            DEBUG("Graph contains next vertex: " << scaffold_graph_.Exists(next_vertex));
+            DEBUG("Graph vertices contain vertex: "
+                      << (scaffold_graph_vertices_.find(next_vertex) != scaffold_graph_vertices_.end()));
+            scaffold_graph::ScaffoldVertexT type = next_vertex.GetType();
+            switch (type) {
+                case scaffold_graph::Edge: {
+                    scaffold_graph::EdgeGetter getter;
+                    EdgeId next = getter.GetEdgeFromScaffoldVertex(next_vertex);
+                    return TryUseEdge(path, next, gap);
+                }
+                case scaffold_graph::Path: return false;
+            }
+            return false;
+        }
+    }
+
+ protected:
+    boost::optional<EdgeId> FindLastUniqueInPath(const BidirectionalPath& path,
+                                                 const unordered_set<ScaffoldVertex>& target_edges) const {
+        boost::optional<EdgeId> result;
+        for (int i =  (int)path.Size() - 1; i >= 0; --i) {
+            EdgeId current = path.At(i);
+            if (target_edges.find(current) != target_edges.end()) {
+                result = path.At(i);
+                return result;
+            }
+        }
+        return result;
+    }
+
+    //fixme logical duplication with LoopDetectingPathExtender
+    bool TryUseEdge(BidirectionalPath &path, EdgeId e, const Gap &gap) {
+        bool success = scaffold_graph_vertices_.find(e) != scaffold_graph_vertices_.end() and
+            visited_.find(e) == visited_.end();
+        if (success) {
+            visited_.insert(e);
+            path.PushBack(e, gap);
+            DEBUG("Adding edge. PathId: " << path.GetId() << " path length: " << path.Length() - 1 << ", fixed gap : "
+                                          << gap.gap << ", trash length: " << gap.trash.previous << "-" << gap.trash.current);
+            DEBUG("Added edge " << e.int_id());
+        }
+        return success;
+    }
+
+    DECL_LOGGER("ScaffoldGraphExtender");
 };
 
 }

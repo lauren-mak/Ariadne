@@ -317,14 +317,19 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
             else:
                 support.error('wrong value for --cov-cutoff option: ' + arg +
                               ' (should be a positive float number, or \'auto\', or \'off\')', log)
-        # start new option for distance here -- WARIS
-        elif opt == "--barcode-distance":
-            if support.is_int(arg) and int(arg) > 0:
-                options_storage.barcode_distance = int(arg)
+        # UPDATE - New option for Ariadne deconvolution search distance
+        elif opt == "--search-distance":
+            if support.is_int(arg) and int(arg) >= 0:
+                options_storage.search_distance = int(arg)
             else:
-                support.error('wrong value for --barcode-distance option: ' + arg +
+                support.error('Incorrect value for search distance: ' + arg +
                               ' (should be a positive int number', log)
-        # end new option for distance -- WARIS
+        elif opt == "--size-cutoff":
+            if support.is_int(arg) and int(arg) >= 0:
+                options_storage.size_cutoff = int(arg)
+            else:
+                support.error('Incorrect value for --size-cutoff: ' + arg +
+                              ' (should be a positive float number', log)
         elif opt == "--hidden-cov-cutoff":
             if support.is_float(arg) and float(arg) > 0.0:
                 options_storage.lcer_cutoff = float(arg)
@@ -451,11 +456,14 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
         #if len(support.get_lib_ids_by_type(dataset_data, 'paired-end')) > 1:
         #    support.error('you cannot specify more than one paired-end library in RNA-Seq mode!')
     if options_storage.meta and not options_storage.only_error_correction:
-        if len(support.get_lib_ids_by_type(dataset_data, "paired-end")) != 1 or \
+        if len(support.get_lib_ids_by_type(dataset_data, ["paired-end", "clouds10x"])) != 1 or \
            len(dataset_data) - min(1, len(support.get_lib_ids_by_type(dataset_data, ["tslr", "pacbio", "nanopore"]))) > 1:
             support.error('you cannot specify any data types except a single paired-end library '
                           '(optionally accompanied by a single library of '
                           'TSLR-contigs, or PacBio reads, or Nanopore reads) in metaSPAdes mode!')
+
+    if len(support.get_lib_ids_by_type(dataset_data, ["clouds10x"])) >= 1 and len(dataset_data) > 1:
+            support.error('SLR library cannot be accompanied by any other libraries!')
 
     if existing_dataset_data is None:
         pyyaml.dump(dataset_data, open(options_storage.dataset_yaml_filename, 'w'),
@@ -522,6 +530,8 @@ def fill_cfg(options_to_parse, log, secondary_filling=False):
         if options_storage.read_buffer_size:
             cfg["assembly"].__dict__["read_buffer_size"] = options_storage.read_buffer_size
         cfg["assembly"].__dict__["correct_scaffolds"] = options_storage.correct_scaffolds
+        cfg["assembly"].__dict__["search_distance"] = options_storage.search_distance
+        cfg["assembly"].__dict__["size_cutoff"] = options_storage.size_cutoff
 
     #corrector can work only if contigs exist (not only error correction)
     if (not options_storage.only_error_correction) and options_storage.mismatch_corrector:

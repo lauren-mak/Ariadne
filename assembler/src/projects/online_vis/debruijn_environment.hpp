@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <common/pipeline/graph_pack.hpp>
 #include "environment.hpp"
 #include "pipeline/graphio.hpp"
 namespace online_visualization {
@@ -25,10 +26,11 @@ class DebruijnEnvironment : public Environment {
         GraphElementFinder<Graph> element_finder_;
         std::shared_ptr<MapperClass> mapper_;
         FillerClass filler_;
-        visualization::graph_labeler::DefaultLabeler<Graph> labeler_;
+        visualization::graph_labeler::DefaultLabeler<Graph> default_labeler_;
+        visualization::graph_labeler::ReadCloudLabeler <Graph> barcode_labeler_;
+        visualization::graph_labeler::CompositeLabeler <Graph> labeler_;
         debruijn_graph::ReadPathFinder<Graph> path_finder_;
         ColoringClass coloring_;
-        //CompositeLabeler<Graph> labeler_;
 
     public :
 
@@ -39,8 +41,8 @@ class DebruijnEnvironment : public Environment {
               picture_counter_(0),
               folder_("pictures_" + name_),
               file_name_base_("picture"),
-              max_vertices_(40),
-              edge_length_bound_(1000),
+              max_vertices_(60),
+              edge_length_bound_(2000),
               gp_(K, "./tmp", cfg::get().ds.reads.lib_count(), 
                   std::vector<std::string>(0),
                   cfg::get().flanking_range,
@@ -49,13 +51,18 @@ class DebruijnEnvironment : public Environment {
               element_finder_(gp_.g),
               mapper_(new MapperClass(gp_.g, gp_.index, gp_.kmer_mapper)),
               filler_(gp_.g, mapper_, gp_.edge_pos),
-              labeler_(gp_.g, gp_.edge_pos),
+              default_labeler_(gp_.g, gp_.edge_pos),
+              barcode_labeler_(gp_.g),
+              labeler_(default_labeler_, barcode_labeler_),
               path_finder_(gp_.g) {
             DEBUG("Environment constructor");
             gp_.kmer_mapper.Attach();
-            debruijn_graph::graphio::ScanGraphPack(path_, gp_);
-//            debruijn_graph::graphio::ScanGraphPack(path_, gp_);
-            DEBUG("Graph pack created")
+            debruijn_graph::graphio::ConjugateDataScanner<Graph> scanner(gp_.g);
+            debruijn_graph::graphio::ScanGraphPack(path_, scanner, gp_);
+            debruijn_graph::graphio::ScanBarcodeIndex(path_, scanner, gp_.g, gp_.barcode_mapper_ptr);
+            DEBUG("Graph pack created");
+            //fixme refactor barcode extractor to avoid that
+            barcode_labeler_.UpdateExtractor(gp_.barcode_mapper_ptr, gp_.g);
             LoadFromGP();
         }
 
@@ -161,6 +168,10 @@ class DebruijnEnvironment : public Environment {
             return gp_.kmer_mapper;
         }
 
+        const shared_ptr<barcode_index::AbstractBarcodeIndex> GetBarcodeExtractor() const {
+            return gp_.barcode_mapper_ptr;
+        }
+
         const ElementFinder& finder() const {
             return element_finder_;
         }
@@ -200,7 +211,7 @@ class DebruijnEnvironment : public Environment {
         ColoringClass& coloring() {
             return coloring_;
         }
-
+        DECL_LOGGER("DebruijnEnvionment");
 };
 
 }

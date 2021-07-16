@@ -1,5 +1,6 @@
 
 #include "path_polisher.hpp"
+#include "read_cloud_path_extend/read_cloud_polisher_support.hpp"
 
 namespace path_extend {
 
@@ -17,11 +18,16 @@ void PathPolisher::InfoAboutGaps(const PathContainer & result){
 
 PathContainer PathPolisher::PolishPaths(const PathContainer &paths) {
     PathContainer result;
+    size_t counter = 0;
     for (const auto& path_pair : paths) {
         BidirectionalPath path = Polish(*path_pair.first);
         BidirectionalPath *conjugate_path = new BidirectionalPath(Polish(path.Conjugate()));
         BidirectionalPath *re_path = new BidirectionalPath(conjugate_path->Conjugate());
         result.AddPair(re_path, conjugate_path);
+        ++counter;
+        DEBUG(counter << " paths processed");
+        VERBOSE_POWER_T2(counter, 100, "Processed " << counter << " paths from " << paths.size()
+                                                    << " (" << counter * 100 / paths.size() << "%)");
     }
     InfoAboutGaps(result);
     return result;
@@ -116,17 +122,34 @@ Gap DijkstraGapCloser::CloseGap(EdgeId target_edge, const Gap &orig_gap, Bidirec
     }
 }
 
-Gap PathExtenderGapCloser::CloseGap(EdgeId target_edge, const Gap &orig_gap, BidirectionalPath &result) const {
+Gap PathExtenderGapCloser::CloseGap(const BidirectionalPath &original_path,
+             size_t position, BidirectionalPath &path) const {
+    DEBUG("Creating extender");
+    auto extender = extender_factory_->CreateExtender(original_path, position);
     size_t added = 0;
-    VertexId target_vertex = g_.EdgeStart(target_edge);
-    while (g_.EdgeEnd(result.Back()) != target_vertex) {
-        bool has_grown = extender_->MakeGrowStep(result);
+    DEBUG("Last edge: " << path.Back().int_id());
+    DEBUG("Target edge: " << original_path.At(position).int_id());
+    VertexId target_vertex = g_.EdgeStart(original_path.At(position));
+    DEBUG("Target_vertex: " << target_vertex.int_id());
+    DEBUG("Current vertex: " << g_.EdgeEnd(path.Back()).int_id());
+    while (g_.EdgeEnd(path.Back()) != target_vertex) {
+        DEBUG("Before makegrowstep")
+        bool has_grown = extender->MakeGrowStep(path);
+        DEBUG("After makegrowstep")
         if (!has_grown)
             break;
-        added += g_.length(result.Back());
+        DEBUG("no break")
+        added += g_.length(path.Back());
+        DEBUG("Added edge " << path.Back().int_id());
+        DEBUG("Overall length " << added);
     }
+    DEBUG("While ended");
+    auto orig_gap = original_path.GapAt(position);
     //FIXME think of checking for 0 in advance
-    return Gap(orig_gap.gap - (int) added, {0, orig_gap.trash.current}, false);
+    DEBUG("Original gap: " << orig_gap.gap << " , added " << (int) added);
+//    VERIFY(orig_gap.NoTrash());
+    return Gap((g_.EdgeEnd(path.Back()) == target_vertex) ? 0 :
+               std::max(orig_gap.gap - (int) added, int(g_.k() + 10)), {0, orig_gap.trash.current}, false);
 }
 
 Gap DijkstraGapCloser::FillWithBridge(const Gap &orig_gap,
@@ -342,4 +365,43 @@ Gap MatePairGapCloser::CloseGap(EdgeId target_edge, const Gap &orig_gap, Bidirec
     }
 }
 
+shared_ptr<LongEdgePairGapCloserPredicate> ReadCloudGapExtensionChooserFactory::ExtractPredicateFromPosition(
+        const BidirectionalPath &path,
+        const size_t position,
+        const LongEdgePairGapCloserParams &params) const {
+    DEBUG("Extracting intersection between prefix and suffix");
+    BidirectionalPath* prefix = new BidirectionalPath(path.SubPath(0, position));
+    BidirectionalPath* prefix_conj = new BidirectionalPath(prefix->Conjugate());
+    BidirectionalPath* suffix = new BidirectionalPath(path.SubPath(position));
+    auto tail_threshold_getter = std::make_shared<barcode_index::ConstTailThresholdGetter>(tail_threshold_);
+    barcode_index::ScaffoldVertexSimpleEntryExtractor simple_extractor(g_, *main_extractor_, tail_threshold_getter,
+                                                                       count_threshold_, length_threshold_);
+    auto prefix_entry = simple_extractor.ExtractEntry(prefix_conj);
+    auto suffix_entry = simple_extractor.ExtractEntry(suffix);
+    DEBUG("Prefix entry size: " << prefix_entry.size());
+    DEBUG("Suffix entry size: " << suffix_entry.size());
+    DEBUG("Prefix length: " << prefix->Length());
+    DEBUG("Suffix length: " << suffix->Length());
+    auto short_edge_extractor = make_shared<barcode_index::BarcodeIndexInfoExtractorWrapper>(g_, main_extractor_);
+    auto short_edge_score_function = make_shared<RepetitiveVertexEntryScoreFunction>(short_edge_extractor);
+    auto pair_entry_extractor = make_shared<path_extend::TwoSetsBasedPairEntryProcessor>(
+    prefix_entry, suffix_entry, short_edge_score_function);
+    auto predicate = make_shared<LongEdgePairGapCloserPredicate>(g_, short_edge_extractor, params,
+                                                                 prefix, suffix, pair_entry_extractor);
+    return predicate;
+}
+shared_ptr<ExtensionChooser> ReadCloudGapExtensionChooserFactory::CreateChooser(const BidirectionalPath &original_path,
+                                                                                    size_t position) const {
+    DEBUG("Creating predicate");
+    auto predicate = ExtractPredicateFromPosition(original_path, position, params_);
+    DEBUG("Created predicate");
+    VERIFY_MSG(position > 0, "Incorrect gap");
+    EdgeId target_edge = original_path.At(position);
+//    EdgeId start_edge = original_path.At(position - 1);
+//    SupportedEdgesGraphExtractor supported_edges_extractor(g_, predicate);
+//    auto supported_edges = supported_edges_extractor.ExtractSupportedEdges(start_edge, target_edge);
+    auto chooser = make_shared<ReadCloudGapExtensionChooser>(g_, unique_storage_, target_edge, predicate, scan_bound_);
+    DEBUG("Created chooser");
+    return chooser;
+}
 }

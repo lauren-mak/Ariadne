@@ -315,7 +315,6 @@ bool ShouldAlignWithPacbioAligner(io::LibraryType lib_type) {
 
 void HybridLibrariesAligning::run(conj_graph_pack& gp, const char*) {
     using namespace omnigraph;
-
     bool make_additional_saves = parent_->saves_policy().make_saves_;
     for (size_t lib_id = 0; lib_id < cfg::get().ds.reads.lib_count(); ++lib_id) {
         if (cfg::get().ds.reads[lib_id].is_hybrid_lib()) {

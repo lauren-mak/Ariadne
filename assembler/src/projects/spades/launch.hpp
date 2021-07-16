@@ -22,16 +22,18 @@
 #include "hybrid_aligning.hpp"
 #include "chromosome_removal.hpp"
 #include "series_analysis.hpp"
+#include "barcode_index_construction.hpp"
 #include "pipeline/stage.hpp"
 #include "contig_output_stage.hpp"
+#include "scaffold_graph_construction_stage.hpp"
+#include "scaffolder_analysis_stage.hpp"
 #include "barcode_deconvolution_stage.hpp"
-// #include "molecule_extraction_stage.cpp"
 
 namespace spades {
 
 inline bool MetaCompatibleLibraries() {
     const auto& libs = cfg::get().ds.reads;
-    if (libs[0].type() != io::LibraryType::PairedEnd)
+    if (not (libs[0].is_paired()) or libs[0].is_mate_pair())
         return false;
     if (libs.lib_count() > 2)
         return false;
@@ -141,9 +143,17 @@ void assemble_genome() {
 
         //No graph modification allowed after HybridLibrariesAligning stage!
 
+        // If a search distance is set, run the read cloud enhancement module Ariadne.
+        if ( cfg::get().search_distance > 0 ) {
+            SPAdes.add<debruijn_graph::BarcodeDeconvolutionStage>();
+        }
+
         SPAdes.add<debruijn_graph::ContigOutput>(false, "intermediate_contigs")
+               .add<debruijn_graph::BarcodeMapConstructionStage>()
                .add<debruijn_graph::PairInfoCount>()
                .add<debruijn_graph::DistanceEstimation>()
+               .add<debruijn_graph::ScaffoldGraphConstructionStage>()
+               .add<debruijn_graph::ScaffolderAnalysisStage>()
                .add<debruijn_graph::RepeatResolution>();
 
     } else {

@@ -92,7 +92,8 @@ public:
 
     explicit GraphCoverageMap(const Graph& g) : g_(g) {
         //FIXME heavy constructor
-        edge_coverage_.reserve(EdgeCount());
+        //todo discuss
+//        edge_coverage_.reserve(EdgeCount());
     }
 
     GraphCoverageMap(const Graph& g, const PathContainer& paths, bool subscribe = false) :
@@ -124,6 +125,7 @@ public:
 
     //Inherited from PathListener
     void BackEdgeAdded(EdgeId e, BidirectionalPath * path, const Gap&) override {
+//        INFO("Edge " << e.int_id() << " added to coverage map!");
         EdgeAdded(e, path);
     }
 

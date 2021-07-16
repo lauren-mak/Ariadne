@@ -25,7 +25,7 @@ ALLOWED_READS_EXTENSIONS += [x + '.gz' for x in ALLOWED_READS_EXTENSIONS]
 # we support up to MAX_LIBS_NUMBER libs for each type of short-reads libs
 MAX_LIBS_NUMBER = 9
 OLD_STYLE_READS_OPTIONS = ["--12", "-1", "-2", "-s", "--merged"]
-SHORT_READS_TYPES = {"pe": "paired-end", "s": "single", "mp": "mate-pairs", "hqmp": "hq-mate-pairs", "nxmate": "nxmate"}
+SHORT_READS_TYPES = {"pe": "paired-end", "s": "single", "mp": "mate-pairs", "hqmp": "hq-mate-pairs", "nxmate": "nxmate", "gemcode": "clouds10x"}
 # other libs types:
 LONG_READS_TYPES = ["pacbio", "sanger", "nanopore", "tslr", "trusted-contigs", "untrusted-contigs"]
 
@@ -86,7 +86,8 @@ tmp_dir = None
 k_mers = None
 qvoffset = None  # auto-detect by default
 cov_cutoff = 'off'  # default is 'off'
-barcode_distance = None # default is 25K --WARIS
+search_distance = None # UPDATE Default is 25000 bp
+size_cutoff = None # UPDATE Default is 0 i.e.: deconvolve all reads
 
 # hidden options
 save_gp = False
@@ -120,6 +121,8 @@ restart_reference = None
 restart_configs_dir = None
 restart_read_buffer_size = None
 restart_fast = None
+restart_search_dist = None
+restart_size_cutoff = None
 
 # for running to specific check-point
 stop_after = None
@@ -141,7 +144,7 @@ dict_of_rel2abs = dict()
 long_options = "12= merged= threads= memory= tmp-dir= iterations= phred-offset= sc iontorrent meta large-genome rna plasmid "\
                "ss-fr ss-rf fast fast:false "\
                "only-error-correction only-assembler "\
-               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false barcode-distance= " \
+               "disable-gzip-output disable-gzip-output:false disable-rr disable-rr:false search-distance= size-cutoff= " \
                "help version test debug debug:false reference= series-analysis= config-file= dataset= "\
                "bh-heap-check= spades-heap-check= read-buffer-size= help-hidden "\
                "mismatch-correction mismatch-correction:false careful careful:false save-gp save-gp:false "\
@@ -240,6 +243,12 @@ def usage(spades_version, show_hidden=False, mode=None):
                          " for paired-end library number <#> (<#> = %s; <or> = fr, rf, ff)" % allowed_lib_ids + "\n")
     sys.stderr.write("--s<#>\t\t<filename>\tfile with unpaired reads"\
                      " for single reads library number <#> (<#> = %s)" % allowed_lib_ids + "\n")
+    sys.stderr.write("--gemcode<#>-12\t<filename>\tfile with interlaced"\
+                         " reads for 10x Genomics Chromium library number <#> (<#> = %s)" % allowed_lib_ids + "\n")
+    sys.stderr.write("--gemcode<#>-1\t<filename>\tfile with forward reads"\
+                         " for 10x Genomics Chromium library number <#> (<#> = %s)" % allowed_lib_ids + "\n")
+    sys.stderr.write("--gemcode<#>-2\t<filename>\tfile with reverse reads"\
+                         " for 10x Genomics Chromium library number <#> (<#> = %s)" % allowed_lib_ids + "\n")
     if mode not in ["rna", "meta"]:
         sys.stderr.write("--mp<#>-12\t<filename>\tfile with interlaced"\
                              " reads for mate-pair library number <#> (<#> = 1,2,..,9)" + "\n")
@@ -265,6 +274,7 @@ def usage(spades_version, show_hidden=False, mode=None):
                              " for Lucigen NxMate library number <#> (<#> = 1,2,..,9)" + "\n")
         sys.stderr.write("--nxmate<#>-2\t<filename>\tfile with reverse reads"\
                              " for Lucigen NxMate library number <#> (<#> = 1,2,..,9)" + "\n")
+
         sys.stderr.write("--sanger\t<filename>\tfile with Sanger reads\n")
     if not mode == "rna":
         sys.stderr.write("--pacbio\t<filename>\tfile with PacBio reads\n")
@@ -389,6 +399,7 @@ def set_default_values():
     global cov_cutoff
     global tmp_dir
     global fast
+    global search_distance
 
     if threads is None:
         threads = THREADS
@@ -417,6 +428,8 @@ def set_default_values():
         tmp_dir = os.path.join(output_dir, TMP_DIR)
     if fast is None:
         fast = False
+    if search_distance is None:
+        search_distance = 0
 
 
 def set_test_options():
@@ -462,6 +475,7 @@ def save_restart_options(log):
     global restart_configs_dir
     global restart_read_buffer_size
     global restart_fast
+    global restart_search_dist
 
     restart_k_mers = k_mers
     restart_careful = careful
@@ -478,7 +492,7 @@ def save_restart_options(log):
     restart_configs_dir = configs_dir
     restart_read_buffer_size = read_buffer_size
     restart_fast = fast
-
+    restart_search_dist = search_distance
 
 def load_restart_options():
     global k_mers
@@ -497,6 +511,7 @@ def load_restart_options():
     global read_buffer_size
     global original_k_mers
     global fast
+    global search_distance
 
     if restart_k_mers:
         original_k_mers = k_mers
@@ -532,6 +547,8 @@ def load_restart_options():
         read_buffer_size = restart_read_buffer_size
     if restart_fast is not None:
         fast = restart_fast
+    if restart_search_dist is not None:
+        search_distance = restart_search_dist
 
 
 def enable_truseq_mode():

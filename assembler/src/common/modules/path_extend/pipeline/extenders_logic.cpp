@@ -4,7 +4,8 @@
 
 #include "extenders_logic.hpp"
 #include "modules/path_extend/scaffolder2015/extension_chooser2015.hpp"
-
+#include "modules/path_extend/read_cloud_path_extend/scaffold_graph_gap_closer/cloud_scaffold_graph_gap_closer.hpp"
+#include "read_cloud_path_extend/validation/scaffold_graph_validation.hpp"
 
 namespace path_extend {
 
@@ -351,6 +352,22 @@ Extenders ExtendersGenerator::MakeMPExtenders(const ScaffoldingUniqueEdgeStorage
     return ExtractExtenders(result);
 }
 
+Extenders ExtendersGenerator::MakeReadCloudExtenders(const ScaffoldingUniqueEdgeStorage &/*storage*/) const {
+    ExtenderTriplets result;
+
+    for (size_t lib_index = 0; lib_index < dataset_info_.reads.lib_count(); ++lib_index) {
+        const auto &lib = dataset_info_.reads[lib_index];
+
+        if (lib.type() == io::LibraryType::Clouds10x) {
+            result.emplace_back(lib.type(), lib_index, MakeScaffoldGraphExtender());
+//            result.emplace_back(lib.type(), lib_index, MakeReadCloudExtender(lib_index));
+        }
+    }
+    std::stable_sort(result.begin(), result.end());
+
+    return ExtractExtenders(result);
+}
+
 Extenders ExtendersGenerator::MakePBScaffoldingExtenders() const {
     const auto &pset = params_.pset;
     ExtenderTriplets result;
@@ -475,6 +492,106 @@ Extenders ExtendersGenerator::MakeBasicExtenders() const {
 
     PrintExtenders(result);
     return result;
+}
+shared_ptr<ExtensionChooser> ExtendersGenerator::MakeSimpleExtensionChooser(size_t lib_index) const {
+    const auto &lib = dataset_info_.reads[lib_index];
+    shared_ptr<PairedInfoLibrary> paired_lib = MakeNewLib(gp_.g, lib, gp_.clustered_indices[lib_index]);
+    VERIFY_MSG(!paired_lib->IsMp(), "Tried to create PE extender for MP library");
+    auto opts = params_.pset.extension_options;
+
+    shared_ptr<CoverageAwareIdealInfoProvider> iip = nullptr;
+    if (params_.uneven_depth || params_.mode == config::pipeline_type::moleculo) {
+        iip = make_shared<CoverageAwareIdealInfoProvider>(gp_.g, paired_lib, lib.data().unmerged_read_length);
+    } else {
+        double lib_cov = support_.EstimateLibCoverage(lib_index);
+        INFO("Estimated coverage of library #" << lib_index << " is " << lib_cov);
+        iip = make_shared<GlobalCoverageAwareIdealInfoProvider>(gp_.g, paired_lib, lib.data().unmerged_read_length, lib_cov);
+    }
+
+    auto wc = make_shared<PathCoverWeightCounter>(gp_.g, paired_lib, params_.pset.normalize_weight,
+                                                  params_.pset.extension_options.single_threshold,
+                                                  iip);
+
+    auto extension_chooser = make_shared<SimpleExtensionChooser>(gp_.g, wc,
+                                                                 opts.weight_threshold,
+                                                                 opts.priority_coeff);
+
+    return extension_chooser;
+}
+shared_ptr<PathExtender> ExtendersGenerator::MakeScaffoldGraphExtender() const {
+    const auto &scaffold_graph = gp_.scaffold_graph_storage.GetSmallScaffoldGraph();
+    bool validate_using_reference = cfg::get().ts_res.debug_mode;
+    if (validate_using_reference) {
+        INFO("Resulting scaffold graph stats");
+        const string path_to_reference = cfg::get().ts_res.statistics.genome_path;
+        DEBUG("Path to reference: " << path_to_reference);
+        DEBUG("Path exists: " << fs::check_existence(path_to_reference));
+        validation::ScaffoldGraphValidator scaffold_graph_validator(gp_.g);
+        validation::FilteredReferencePathHelper path_helper(gp_);
+        size_t length_threshold = gp_.scaffold_graph_storage.GetSmallLengthThreshold();
+        auto reference_paths = path_helper.GetFilteredReferencePathsFromLength(path_to_reference, length_threshold);
+
+        auto stats = scaffold_graph_validator.GetScaffoldGraphStats(scaffold_graph, reference_paths);
+        stats.Serialize(std::cout);
+    }
+    INFO(scaffold_graph.VertexCount() << " vertices and " << scaffold_graph.EdgeCount()
+                                     << " edges in scaffold graph");
+    shared_ptr<ScaffoldGraphExtender> extender = make_shared<ScaffoldGraphExtender>(gp_.g, scaffold_graph);
+    return extender;
+}
+shared_ptr<PathExtender> ExtendersGenerator::MakeReadCloudExtender(size_t lib_index) const {
+    const auto &lib = dataset_info_.reads[lib_index];
+    shared_ptr<PairedInfoLibrary> paired_lib = MakeNewLib(gp_.g, lib, gp_.clustered_indices[lib_index]);
+    shared_ptr<WeightCounter> weight_counter = make_shared<ReadCountWeightCounter>(gp_.g, paired_lib);
+    auto opts = params_.pset.extension_options;
+    double weight_threshold = opts.weight_threshold;
+
+    auto pe_extension_chooser = MakeSimpleExtensionChooser(lib_index);
+
+    //fixme move to configs
+    const size_t reliable_edge_length = 200;
+    const size_t tail_threshold = 6000;
+    const size_t distance_bound = 6000;
+    const size_t seed_edge_length = 2000;
+    const double extender_score_threshold = 0.04;
+    const double relative_coverage_threshold = 1.5;
+    const size_t barcode_threshold = 1;
+    const size_t score_function_tail_threshold = 1000;
+
+    auto barcode_extractor =
+        std::make_shared<barcode_index::FrameBarcodeIndexInfoExtractor>(gp_.barcode_mapper_ptr, gp_.g);
+    RelativeUniquePredicateGetter predicate_getter(gp_.g, reliable_edge_length,
+                                                   seed_edge_length, relative_coverage_threshold);
+    auto entry_collector = std::make_shared<SimpleBarcodeEntryCollector>(gp_.g, barcode_extractor, predicate_getter,
+                                                                         tail_threshold);
+    auto edge_selector_factory = std::make_shared<SimpleReachableEdgesSelectorFactory>(gp_.g, barcode_extractor,
+                                                                                       barcode_threshold,
+                                                                                       reliable_edge_length,
+                                                                                       distance_bound);
+    auto read_cloud_extension_chooser = make_shared<ReadCloudExtensionChooser>(gp_.g,
+                                                                               weight_counter,
+                                                                               weight_threshold,
+                                                                               barcode_extractor,
+                                                                               entry_collector,
+                                                                               edge_selector_factory,
+                                                                               extender_score_threshold,
+                                                                               score_function_tail_threshold);
+    size_t insert_size = paired_lib->GetISMax();
+    bool investigate_short_loops = false;
+    bool use_short_loops_cov_resolver = true;
+    auto read_cloud_extender = make_shared<ReadCloudExtender>(gp_,
+                                                              cover_map_,
+                                                              used_unique_storage_,
+                                                              read_cloud_extension_chooser,
+                                                              insert_size,
+                                                              investigate_short_loops,
+                                                              use_short_loops_cov_resolver,
+                                                              weight_threshold,
+                                                              predicate_getter,
+                                                              entry_collector,
+                                                              edge_selector_factory,
+                                                              seed_edge_length);
+    return read_cloud_extender;
 }
 
 }

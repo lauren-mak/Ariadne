@@ -483,8 +483,69 @@ struct debruijn_config {
 
     contig_output co;
 
+    struct read_cloud_resolver {
+        std::string tslr_dataset;
+
+        size_t edge_tail_len;
+        size_t frame_size;
+
+        bool read_cloud_gap_closer_on;
+        bool read_cloud_resolution_on;
+
+        size_t long_edge_length_min_upper_bound;
+        size_t long_edge_length_max_upper_bound;
+        size_t long_edge_length_lower_bound;
+
+        double gap_closer_connection_score_threshold;
+        double gap_closer_relative_coverage_threshold;
+        size_t gap_closer_connection_length_threshold;
+
+        size_t min_training_edges;
+        size_t min_training_total_length;
+        size_t optimal_training_total_length;
+
+        struct scaffold_graph_construction {
+          double score_percentile;
+          double cluster_length_percentile;
+          size_t count_threshold;
+          double relative_coverage_threshold;
+          size_t connection_length_threshold;
+          size_t connection_count_threshold;
+          double split_procedure_strictness;
+          size_t transitive_distance_threshold;
+          size_t path_scaffolder_tail_threshold;
+          size_t path_scaffolder_count_threshold;
+          size_t min_edge_length_for_barcode_collection;
+        };
+
+        scaffold_graph_construction scaff_con;
+
+        struct scaffold_polisher {
+          size_t max_scaffold_dijkstra_distance;
+          double share_threshold;
+          size_t read_count_threshold;
+          size_t path_cluster_linkage_distance;
+          double path_cluster_relative_threshold;
+          size_t path_cluster_min_reads;
+        };
+
+        scaffold_polisher scaff_pol;
+
+        struct stats {
+            std::string genome_path;
+            std::string base_contigs_path;
+            std::string cloud_contigs_path;
+        };
+
+        stats statistics;
+
+        bool path_scaffolding_on;
+        bool debug_mode;
+    };
+
     boost::optional<scaffold_correction> sc_cor;
     truseq_analysis tsa;
+    read_cloud_resolver ts_res;
     std::string load_from;
 
     std::string entry_point;
@@ -543,7 +604,8 @@ struct debruijn_config {
 
     bool need_mapping;
 
-    int barcode_distance;
+    int search_distance;
+    int size_cutoff;
 
     debruijn_config() :
             use_single_reads(false) {

@@ -35,7 +35,7 @@ enum class LibraryType {
     TSLReads,
     PathExtendContigs,
     UntrustedContigs,
-    RNA10x
+    Clouds10x
 };
 
 enum class LibraryOrientation {
@@ -178,7 +178,8 @@ public:
     bool is_graph_contructable() const {
         return type_ == io::LibraryType::PairedEnd ||
                type_ == io::LibraryType::SingleReads ||
-               type_ == io::LibraryType::HQMatePairs;
+               type_ == io::LibraryType::HQMatePairs ||
+               type_ == io::LibraryType::Clouds10x;
     }
 
     bool is_bwa_alignable() const {
@@ -196,7 +197,8 @@ public:
     bool is_paired() const {
         return type_ == io::LibraryType::PairedEnd ||
                type_ == io::LibraryType::MatePairs ||
-               type_ == io::LibraryType::HQMatePairs;
+               type_ == io::LibraryType::HQMatePairs ||
+               type_ == io::LibraryType::Clouds10x;
     }
 
     bool is_mate_pair() const {

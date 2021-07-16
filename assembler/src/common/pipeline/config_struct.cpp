@@ -428,7 +428,66 @@ void load(debruijn_config::truseq_analysis& tsa,
   load(tsa.genome_file, pt, "genome_file");
 }
 
-void load(bwa_aligner& bwa,
+void load(debruijn_config::read_cloud_resolver::stats& statistics,
+          boost::property_tree::ptree const& pt, bool /*complete*/) {
+    using config_common::load;
+    load(statistics.genome_path, pt, "genome_path");
+    load(statistics.base_contigs_path, pt, "base_contigs_path");
+    load(statistics.cloud_contigs_path, pt, "cloud_contigs_path");
+}
+
+void load(debruijn_config::read_cloud_resolver::scaffold_polisher& scaff_pol,
+          boost::property_tree::ptree const& pt, bool /*complete*/) {
+    using config_common::load;
+    load(scaff_pol.share_threshold, pt, "share_threshold");
+    load(scaff_pol.read_count_threshold, pt, "read_count_threshold");
+    load(scaff_pol.max_scaffold_dijkstra_distance, pt, "max_scaffold_distance");
+    load(scaff_pol.path_cluster_linkage_distance, pt, "path_cluster_linkage_distance");
+    load(scaff_pol.path_cluster_min_reads, pt, "path_cluster_min_reads");
+    load(scaff_pol.path_cluster_relative_threshold, pt, "path_cluster_score_threshold");
+}
+
+void load(debruijn_config::read_cloud_resolver::scaffold_graph_construction& scaff_con,
+          boost::property_tree::ptree const &pt, bool /*complete*/) {
+    using config_common::load;
+    load(scaff_con.score_percentile, pt, "score_percentile");
+    load(scaff_con.cluster_length_percentile, pt, "cluster_length_percentile");
+    load(scaff_con.count_threshold, pt, "count_threshold");
+    load(scaff_con.relative_coverage_threshold, pt, "relative_coverage_threshold");
+    load(scaff_con.connection_length_threshold, pt, "connection_length_threshold");
+    load(scaff_con.connection_count_threshold, pt, "connection_count_threshold");
+    load(scaff_con.split_procedure_strictness, pt, "split_strictness");
+    load(scaff_con.transitive_distance_threshold, pt, "transitive_distance_threshold");
+    load(scaff_con.path_scaffolder_tail_threshold, pt, "path_scaffolder_tail_threshold");
+    load(scaff_con.path_scaffolder_count_threshold, pt, "path_scaffolder_count_threshold");
+    load(scaff_con.min_edge_length_for_barcode_collection, pt, "min_edge_length_for_barcode_collection");
+}
+
+void load(debruijn_config::read_cloud_resolver& ts_res,
+          boost::property_tree::ptree const& pt, bool /*complete*/) {
+    using config_common::load;
+    load(ts_res.tslr_dataset, pt, "tslr_dataset");
+    load(ts_res.edge_tail_len, pt, "edge_tail_len");
+    load(ts_res.frame_size, pt, "frame_size");
+    load(ts_res.read_cloud_gap_closer_on, pt, "read_cloud_gap_closer_on");
+    load(ts_res.read_cloud_resolution_on, pt, "read_cloud_resolution_on");
+    load(ts_res.scaff_pol, pt, "scaffold_polisher");
+    load(ts_res.scaff_con, pt, "scaffold_graph_construction");
+    load(ts_res.long_edge_length_min_upper_bound, pt, "long_edge_length_min_upper_bound");
+    load(ts_res.long_edge_length_max_upper_bound, pt, "long_edge_length_max_upper_bound");
+    load(ts_res.long_edge_length_lower_bound, pt, "long_edge_length_lower_bound");
+    load(ts_res.min_training_edges, pt, "min_training_edges");
+    load(ts_res.min_training_total_length, pt, "min_training_total_length");
+    load(ts_res.optimal_training_total_length, pt, "optimal_training_total_length");
+    load(ts_res.statistics, pt, "statistics");
+    load(ts_res.path_scaffolding_on, pt, "path_scaffolding_on");
+    load(ts_res.debug_mode, pt, "debug_mode");
+    load(ts_res.gap_closer_connection_score_threshold, pt, "gap_closer_connection_score_threshold");
+    load(ts_res.gap_closer_relative_coverage_threshold, pt, "gap_closer_relative_coverage_threshold");
+    load(ts_res.gap_closer_connection_length_threshold, pt, "gap_closer_connection_length_threshold");
+}
+
+void load(debruijn_config::bwa_aligner& bwa,
           boost::property_tree::ptree const& pt, bool /*complete*/) {
     using config_common::load;
     load(bwa.min_contig_len, pt, "min_contig_len");
@@ -703,6 +762,7 @@ void load_cfg(debruijn_config &cfg, boost::property_tree::ptree const &pt,
 
     //FIXME
     load(cfg.tsa, pt, "tsa", complete);
+    load(cfg.ts_res, pt, "ts_res", complete);
 
     load(cfg.co, pt, "contig_output", complete);
 
@@ -756,8 +816,8 @@ void load_cfg(debruijn_config &cfg, boost::property_tree::ptree const &pt,
 
     load(cfg.ss, pt, "strand_specificity", complete);
     load(cfg.calculate_coverage_for_each_lib, pt, "calculate_coverage_for_each_lib", complete);
-    load(cfg.barcode_distance, pt, "barcode_distance", complete);
-    INFO("FINDING BARCODE DISTANCE: " << cfg.barcode_distance);
+    load(cfg.search_distance, pt, "search_distance", complete);
+    load(cfg.size_cutoff, pt, "size_cutoff", complete);
 
 
     if (pt.count("plasmid")) {

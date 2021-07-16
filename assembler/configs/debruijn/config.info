@@ -5,6 +5,7 @@
 #include "distance_estimation.info"
 #include "detail_info_printer.info"
 #include "tsa.info"
+#include "tslr_resolver.info"
 #include "pe_params.info"
 
 K		55
@@ -175,5 +176,5 @@ bwa_aligner
 flanking_range 55
 series_analysis ""
 save_gp false
-
-barcode_distance 25000
+search_distance 0
+size_cutoff 0

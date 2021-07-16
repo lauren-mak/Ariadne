@@ -87,6 +87,7 @@ class ScaffoldingUniqueEdgeAnalyzer {
     bool ConservativeByPaths(EdgeId e, const GraphCoverageMap &long_reads_cov_map,
                              const pe_config::LongReads &lr_config, int direction) const;
     bool ConservativeByLength(EdgeId e);
+    bool ConservativeByTopology(EdgeId e);
     void CheckCorrectness(ScaffoldingUniqueEdgeStorage& unique_storage_pb);
 protected:
     DECL_LOGGER("ScaffoldingUniqueEdgeAnalyzer")
@@ -106,6 +107,8 @@ public:
     void FillUniqueEdgesWithLongReads(GraphCoverageMap &long_reads_cov_map,
                                       ScaffoldingUniqueEdgeStorage &unique_storage_pb,
                                       const pe_config::LongReads &lr_config);
+    void FillUniqueEdgesWithTopology(ScaffoldingUniqueEdgeStorage &storage_);
+    void AddUniqueEdgesFromSet(ScaffoldingUniqueEdgeStorage &storage, const unordered_set<EdgeId> &edges) const;
 };
 
 class UsedUniqueStorage {
@@ -164,6 +167,7 @@ struct UniqueData {
     vector<ScaffoldingUniqueEdgeStorage> unique_storages_;
 
     ScaffoldingUniqueEdgeStorage unique_pb_storage_;
+    ScaffoldingUniqueEdgeStorage unique_read_cloud_storage_;
     vector<PathContainer> long_reads_paths_;
     vector<GraphCoverageMap> long_reads_cov_map_;
 };

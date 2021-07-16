@@ -73,10 +73,14 @@ public:
 
     Extenders MakeMPExtenders() const;
 
+    Extenders MakeReadCloudExtenders(const ScaffoldingUniqueEdgeStorage& storage) const;
+
     Extenders MakeCoverageExtenders() const;
 
     Extenders MakePEExtenders() const;
 
+    //fixme MakePEExtenders duplication
+    shared_ptr<ExtensionChooser> MakeSimpleExtensionChooser(size_t lib_index) const;
 private:
 
     shared_ptr<SimpleExtender> MakePEExtender(size_t lib_index, bool investigate_loops) const;
@@ -104,6 +108,10 @@ private:
     shared_ptr<SimpleExtender> MakeRNAExtender(size_t lib_index, bool investigate_loops) const;
 
     shared_ptr<SimpleExtender> MakeSimpleCoverageExtender(size_t lib_index) const;
+
+    shared_ptr<PathExtender> MakeScaffoldGraphExtender() const;
+
+    shared_ptr<PathExtender> MakeReadCloudExtender(size_t lib_index) const;
 
     void PrintExtenders(const vector<shared_ptr<PathExtender>> &extenders) const;
 

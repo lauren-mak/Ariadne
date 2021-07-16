@@ -51,6 +51,8 @@ class PathExtendLauncher {
 
     void FillPBUniqueEdgeStorages();
 
+    void FillReadCloudUniqueEdgeStorage();
+
     void FillPathContainer(size_t lib_index, size_t size_threshold = 1);
 
     void FillLongReadsCoverageMaps();
@@ -75,8 +77,9 @@ class PathExtendLauncher {
 
     Extenders ConstructPBExtenders(const ExtendersGenerator &generator);
 
-    void FilterPaths();
+    Extenders ConstructReadCloudExtender(const ExtendersGenerator &generator);
 
+    void FilterPaths();
 public:
 
     PathExtendLauncher(const config::dataset& dataset_info,
