@@ -20,10 +20,10 @@ Currently, Ariadne is implemented as a module of an older version of the cloudSP
 From source: 
 ```
 git clone <url>   
-cd Ariadne
+cd ariadne/
 ./spades_compile.sh
 ```
-The installation directory can be set by `PREFIX=<destination_dir>` in the build step. 
+The installation directory can be set by `PREFIX=<destination_dir>` in the compile step. 
 
 In the future, Ariadne will be repackaged as a standalone program, along with a scaffold generator such that deconvolved reads can be directly used to generate *de novo* assemblies without a second cloudSPAdes run.
 
@@ -52,7 +52,7 @@ sed '1~4s/$/-1/' <fastq_name>.R1.fastq > <fastq_suffixed>.R1.fastq
 At the end of the deconvolution procedure, Ariadne outputs paired FastQ files with enhanced barcode assignments in the directory `/path/to/output_dir/K55/<max_search_dist>.RX.fastq`. The original barcode has been augmented with the enhanced grouping number. In this example, the first set of paired reads `@D00547:847:HYHNTBCXX:1:1101:10000:10626` have been assigned to the 13th group out of all reads with the barcode `BX:Z:CCTTCCCTCCTTCAAT`. This fastq can be directly provided as input to a *de novo* assembler or a read mapper optimized for linked-reads.
 
 ```
-$ head /path/to/output/k55/<max_search_dist>.R1.fastq
+$ head /path/to/output/K55/<max_search_dist>.R1.fastq
 @D00547:847:HYHNTBCXX:1:1101:10000:10626 BX:Z:CCTTCCCTCCTTCAAT-13
 ATGCTGGGGTTTCCGCTGCAATTCTTTGTCCGGTTCTTTAAGAACCACGGCTTGCTGTCGATCAGCAACCGCCCACAGTGGTGCGTGATCGAAGGCGGCTCCAGCAGCTACATCGAGCCGCTGACCC
 +
@@ -73,8 +73,14 @@ A full exploration of performance metrics will be available with the manuscript.
 
 ## Datasets
 
-The MOCK5 dataset used in the paper may be downloaded from [AWS](https://s3.us-east-2.amazonaws.com/readclouds/cloudspades_data.tar.gz).
+The MOCK5 and MOCK20 10x datasets used in the paper may be downloaded from [AWS](https://s3.us-east-2.amazonaws.com/readclouds/cloudspades_data.tar.gz). The MOCK5 LoopSeq and MOCK20 TELL-Seq datasets can be found at https://www.ncbi.nlm.nih.gov/bioproject/PRJNA728470. 
 
-## Credits
+## Credits and Citations
+
+Find the Ariadne preprint [here](https://www.biorxiv.org/content/10.1101/2021.05.09.443255v1). If you've found Ariadne useful, please cite it as:
+
+Ariadne: Barcoded Linked-Read Deconvolution Using de Bruijn Graphs
+Lauren Mak, Dmitry Meleshko, David C. Danko, Waris N. Barakzai, Natan Belchikov, Iman Hajirasouliha
+bioRxiv 2021.05.09.443255; doi: https://doi.org/10.1101/2021.05.09.443255
 
 This algorithm was developed by Waris Barakzai and myself, and tested by myself with help from Dmitrii Meleshko, David Danko, Natan Belchikov and Iman Hajirasouliha.

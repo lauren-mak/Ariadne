@@ -130,7 +130,6 @@ void assemble_genome() {
     }
     // LM: Testing. So that only the barcode deconvolution stage is added to the run function.
 
-    /* LMnew: Testing. Get rid so that it finishes the last iteration faster.
     if (cfg::get().rr_enable) {
         if (!cfg::get().series_analysis.empty())
             SPAdes.add<debruijn_graph::SeriesAnalysis>();
@@ -159,7 +158,7 @@ void assemble_genome() {
     } else {
         SPAdes.add<debruijn_graph::ContigOutput>(false);
     }
-    */
+    
 
     SPAdes.add<debruijn_graph::ContigOutput>();
 

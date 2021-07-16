@@ -36,6 +36,7 @@ namespace debruijn_graph {
      Tools to process barcode strings and single reads.
     */
 
+    /*
     inline int CalcCutoff(vector<int> cloud_sizes, float size_cutoff)
     {
         size_t size = cloud_sizes.size();
@@ -48,6 +49,7 @@ namespace debruijn_graph {
             return cloud_sizes[cutoff_index];
         }
     }
+    */
 
     inline int SmallestVectorIndex(std::vector<std::vector<std::tuple<std::string, std::string, std::string, int>>>& v) {
         int smallest = INT_MAX;
@@ -171,6 +173,7 @@ namespace debruijn_graph {
         return read_string;
     }
 
+    /*
     void ReformatYAMLs()
     // Move old input_dataset.yaml to a different name, and write a new version of it so that
     // barcode_index_construction.cpp will pick up on the enhanced FastQs instead of the original FastQs.
@@ -191,6 +194,7 @@ namespace debruijn_graph {
                << "  \"right reads\":\n" << "  - \"" << prefix << ".R2.fastq\"\n  \"type\": \"clouds10x\"";
         stream.close();
     }
+    */
 
     /*
      Workhorse read information processing functions.
@@ -476,6 +480,7 @@ namespace debruijn_graph {
             // if ( barcode.empty() ) barcode = "NA"; // If this is an unbarcoded read-pair, set it to NA.
             enh_cloud_stats << barcode << "," << 0 << "," << master_record.size() << std::endl; // Reporting un-enhanced read cloud information.
         }
+        enh_cloud_stats.flush();
         return master_record;
     }
 
